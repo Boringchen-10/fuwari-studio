@@ -10,6 +10,8 @@ Download the Windows x64 archive from [Releases](https://github.com/Boringchen-1
 
 ## v0.1 Features
 
+Current version: **v0.1.1**, adding GitHub Pages publishing. [Changes and known issues](docs/releases/v0.1.1.en.md) · [Initial v0.1 overview](docs/releases/v0.1.0.en.md).
+
 - Markdown posts, drafts, categories, tags, and cover images.
 - Local autosave and live Fuwari preview with desktop and mobile viewport options.
 - Avatar, profile, banner, theme color, navigation, About page, and friend links.
