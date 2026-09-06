@@ -1,0 +1,15 @@
+---
+const enabled = import.meta.env.DEV;
+---
+{enabled && <script is:inline>
+  if (window.parent !== window) {
+    window.addEventListener('message', event => {
+      let origin;
+      try { origin = new URL(event.origin); } catch { return; }
+      if (event.source !== window.parent || origin.hostname !== '127.0.0.1' || origin.protocol !== 'http:' || event.data?.type !== 'blog-studio-appearance') return;
+      const hue = Number(event.data.hue);
+      if (Number.isFinite(hue) && hue >= 0 && hue <= 360) document.documentElement.style.setProperty('--hue', String(hue));
+      if (typeof event.data.dark === 'boolean') document.documentElement.classList.toggle('dark', event.data.dark);
+    });
+  }
+</script>}

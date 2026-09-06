@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Fuwari Studio v0.1</title><link rel="stylesheet" href="/styles.css"><script src="/lucide.js" defer></script><script src="/app.js" defer></script></head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#posts"><span class="brand-icon"><i data-lucide="notebook-pen"></i></span><span>Fuwari<span class="brand-caption">Studio v0.1</span></span></a>
+    <button class="new-button" id="new-post"><i data-lucide="plus"></i><span>写文章</span></button>
+    <nav aria-label="管理导航">
+      <a href="#posts" data-nav="posts"><i data-lucide="files"></i><span>全部文章</span><small id="nav-count">0</small></a>
+      <a href="#drafts" data-nav="drafts"><i data-lucide="file-pen-line"></i><span>草稿箱</span><small id="draft-count">0</small></a>
+      <div class="nav-label">我的空间</div>
+      <a href="#profile" data-nav="profile"><i data-lucide="user-round"></i><span>个人资料</span></a>
+      <a href="#appearance" data-nav="appearance"><i data-lucide="palette"></i><span>外观与导航</span></a>
+      <a href="#about" data-nav="about"><i data-lucide="notebook-text"></i><span>关于页面</span></a>
+      <a href="#friends" data-nav="friends"><i data-lucide="users-round"></i><span>友情链接</span></a>
+      <div class="nav-label">发布</div>
+      <a href="#publish" data-nav="publish"><i data-lucide="send"></i><span>发布中心</span></a>
+      <a href="#server" data-nav="server"><i data-lucide="server"></i><span>服务器连接</span></a>
+      <a href="#trash" data-nav="trash"><i data-lucide="trash-2"></i><span>回收站</span></a>
+    </nav>
+    <div class="local-status"><span class="connection-dot"></span><span id="connection-label">正在连接本地服务</span></div>
+    <div class="sidebar-profile"><img id="sidebar-avatar" alt="博客头像"><div><strong id="sidebar-name">拾光</strong><small>本地内容管理</small></div></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><div class="breadcrumb"><span>我的博客</span><i data-lucide="chevron-right"></i><strong id="page-title">全部文章</strong></div><div class="top-actions"><span id="save-status" role="status"><i data-lucide="check"></i>已保存到本地</span><button class="button" id="save-button"><i data-lucide="save"></i><span>保存</span></button><a class="button primary" href="#publish"><i data-lucide="send"></i><span>发布</span></a></div></header>
+    <div class="split-workspace">
+      <main id="editor-pane"><div class="loading">正在打开工作台…</div></main>
+      <section class="preview-pane" aria-label="实时博客预览">
+        <div class="preview-toolbar"><div class="preview-label"><span class="live-dot"></span><strong>实时预览</strong></div><div class="preview-tools"><div class="segmented" role="group" aria-label="预览尺寸"><button class="active" data-device="desktop" aria-label="桌面预览" title="桌面预览"><i data-lucide="monitor"></i></button><button data-device="mobile" aria-label="手机预览" title="手机预览"><i data-lucide="smartphone"></i></button></div><button class="icon-button" id="preview-theme" title="切换预览深浅主题" aria-label="切换预览深浅主题"><i data-lucide="sun-moon"></i></button><button class="icon-button" id="preview-refresh" title="刷新预览" aria-label="刷新预览"><i data-lucide="rotate-cw"></i></button><a class="icon-button" id="preview-open" target="_blank" rel="noreferrer" title="在新窗口打开博客" aria-label="在新窗口打开博客"><i data-lucide="external-link"></i></a></div></div>
+        <div class="preview-location"><i data-lucide="globe"></i><span id="preview-location">本地预览准备中</span></div>
+        <div id="preview-stage"><div id="preview-loading"><i data-lucide="loader-circle"></i><p>博客预览正在启动</p></div><div id="frame-wrap"><iframe id="preview-frame" title="Fuwari 博客实时预览"></iframe></div></div>
+        <div class="preview-footer"><span id="preview-status">连接中</span><span>Astro + Fuwari</span></div>
+      </section>
+    </div>
+  </div>
+  <dialog id="new-dialog"><form id="new-form"><div class="dialog-heading"><h2>开始一篇新记录</h2><button type="button" class="icon-button" data-close-dialog aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></div><label>文章标题<input name="title" placeholder="给这篇文章起个名字" required maxlength="200" autofocus></label><label>文章地址<input name="slug" placeholder="例如 my-first-post（可留空）" pattern="[a-z0-9][a-z0-9_-]*" maxlength="100"></label><div class="dialog-actions"><button type="button" class="button" data-close-dialog>取消</button><button type="submit" class="button primary"><i data-lucide="plus"></i>创建草稿</button></div></form></dialog>
+  <dialog id="confirm-dialog"><div class="dialog-heading"><h2 id="confirm-title">移入回收站</h2></div><p id="confirm-message"></p><div class="dialog-actions"><button class="button" id="confirm-cancel">取消</button><button class="button danger" id="confirm-ok">移入回收站</button></div></dialog>
+  <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" hidden>
+  <div id="toast" role="status" hidden></div>
+<script src="/desktop-ui.js" defer></script>
+</body>
+</html>
