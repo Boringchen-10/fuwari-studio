@@ -41,6 +41,8 @@
 
 ## 源码与致谢
 
+开发与打包步骤见 [构建说明](docs/BUILD.md)。
+
 `desktop/` 为 Electron 主进程及发布模块，`fuwari-main/` 为分发包的干净模板源码。初始两个标签由各自现存分发包提取运行源码，排除依赖、个人博客、凭据和缓存；不伪造此前开发提交历史。
 
 基于 [Fuwari](https://github.com/saicaca/fuwari)、[Astro](https://astro.build/)、[Electron](https://www.electronjs.org/)、[ssh2-sftp-client](https://github.com/theophilusx/ssh2-sftp-client) 和 [Lucide](https://lucide.dev/)。原始许可保留在模板及发布包中，Fuwari 许可另见 [LICENSE-FUWARI](LICENSE-FUWARI)。

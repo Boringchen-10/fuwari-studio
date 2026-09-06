@@ -41,6 +41,8 @@ The initial v0.1 release uses tag `v0.1.0`. Minor releases such as `v0.2.0` and 
 
 ## Source and Credits
 
+See [build instructions](docs/BUILD.md) for development and packaging.
+
 `desktop/` contains the Electron application and deployment modules. `fuwari-main/` contains the clean distribution template. The first two tags recover runtime source from their existing distributions, excluding dependencies, personal content, credentials, and caches; they do not reconstruct earlier development history.
 
 Built on [Fuwari](https://github.com/saicaca/fuwari), [Astro](https://astro.build/), [Electron](https://www.electronjs.org/), [ssh2-sftp-client](https://github.com/theophilusx/ssh2-sftp-client), and [Lucide](https://lucide.dev/). Original licenses remain in the template and distribution; see also [LICENSE-FUWARI](LICENSE-FUWARI).
