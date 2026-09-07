@@ -6,6 +6,7 @@ const {promisify}=require('node:util');
 const execFileAsync=promisify(execFile);
 const {createHash}=require('node:crypto');
 const deployment=require('./deploy.cjs');
+const github=require('./github.cjs');
 const dataArg=process.argv.find(arg=>arg.startsWith('--data-dir='));
 if(dataArg)app.setPath('userData',path.resolve(dataArg.slice(11)));
 else if(app.isPackaged)app.setPath('userData',path.join(path.dirname(process.execPath),'Fuwari Studio Data'));
@@ -22,15 +23,17 @@ const credentialFile=()=>path.join(app.getPath('userData'),'connections',createH
 async function readConnection(){
   try{return JSON.parse(safeStorage.decryptString(await fs.readFile(credentialFile())));}catch(error){if(error.code==='ENOENT')return {};throw new Error('无法解密服务器资料，请在当前 Windows 用户下重新配置。');}
 }
-function publicConnection(connection){const {password,privateKey,passphrase,...data}=connection;return {...data,configured:Boolean(connection.fingerprint),hasPassword:Boolean(password),hasPrivateKey:Boolean(privateKey)};}
+function publicConnection(connection){const {password,privateKey,passphrase,token,...data}=connection;return {...data,configured:connection.provider==='github'?Boolean(token):Boolean(connection.fingerprint),hasToken:Boolean(token),hasPassword:Boolean(password),hasPrivateKey:Boolean(privateKey)};}
 async function mergedConnection(input){
   const old=await readConnection();const same=old.host===input.host&&Number(old.port)===Number(input.port)&&old.username===input.username&&old.authType===input.authType;
+  if(input.provider==='github')return github.validate({...input,token:input.token||(old.provider==='github'&&old.owner===input.owner&&old.repo===input.repo?old.token:'')});
   return deployment.validate({...input,password:input.password||(same?old.password:''),privateKey:input.privateKey||(same?old.privateKey:''),passphrase:input.passphrase||(same?old.passphrase:'')});
 }
 async function handle(action,data){
   if(action==='connection-get')return publicConnection(await readConnection());
+  if(action==='github-status')return github.status(await readConnection(),data.commit);
   if(action==='connection-test'){
-    const config=await mergedConnection(data);let result=await deployment.test(config);
+    const config=await mergedConnection(data);if(config.provider==='github')return github.test(config);let result=await deployment.test(config);
     if(result.needsTrust){
       const response=await dialog.showMessageBox(window,{type:'warning',title:'核对 SSH 服务器指纹',message:config.fingerprint?'服务器身份已改变':'首次连接这台服务器',detail:`服务器：${config.host}:${config.port}\n\nSHA256 指纹：\n${result.fingerprint}\n\n请与服务器管理员提供的指纹核对。一致后才继续认证。`,buttons:['取消','指纹一致，继续'],defaultId:0,cancelId:0,noLink:true});
       if(response.response!==1)throw new Error('已取消服务器身份确认');
@@ -41,8 +44,9 @@ async function handle(action,data){
   if(action==='connection-save'){
     if(publishing)throw new Error('发布中不能修改服务器');
     if(!safeStorage.isEncryptionAvailable())throw new Error('Windows 本机加密不可用，无法保存凭据');
-    const config=await mergedConnection(data);if(!config.fingerprint)throw new Error('请先测试连接并核对服务器指纹');
-    const result=await deployment.test(config);if(result.needsTrust)throw new Error('服务器指纹不匹配，请重新测试连接');
+    const config=await mergedConnection(data);
+    if(config.provider==='github')await github.test(config);
+    else {if(!config.fingerprint)throw new Error('请先测试连接并核对服务器指纹');const result=await deployment.test(config);if(result.needsTrust)throw new Error('服务器指纹不匹配，请重新测试连接');}
     const file=credentialFile();await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,safeStorage.encryptString(JSON.stringify(config)));return publicConnection(config);
   }
   if(action==='deploy'){
@@ -50,6 +54,14 @@ async function handle(action,data){
     const directory=await fs.realpath(data.directory);const allowed=path.join(project,'.local-admin','releases')+path.sep;
     if(!directory.startsWith(allowed))throw new Error('只能发布当前博客生成的发布包');
     const connection=await readConnection();
+    if(connection.provider==='github'){
+      publishing=true;
+      try{
+        const approval=await dialog.showMessageBox(window,{type:'question',title:'发布到 GitHub Pages',message:'确认公开发布博客？',detail:`仓库：${connection.owner}/${connection.repo}\n网站：${connection.siteUrl}\n分支：fuwari-pages\n\n将上传构建后的公开网站，替换该发布分支的文件，并开启 Pages。历史提交保留。`,buttons:['取消','发布'],defaultId:0,cancelId:0,noLink:true});
+        if(approval.response!==1)throw new Error('已取消发布');
+        return await github.publish(connection,directory);
+      }finally{publishing=false;}
+    }
     const approval=await dialog.showMessageBox(window,{type:'question',title:'发布到服务器',message:'确认更新线上博客？',detail:`网站：${connection.siteUrl}\n服务器：${connection.username}@${connection.host}:${connection.port}\n目录：${connection.remoteRoot}\n\n将替换同名网站文件，并清理上次由本程序发布、此次已移除的文件。旧文件会保留远程备份。`,buttons:['取消','发布'],defaultId:0,cancelId:0,noLink:true});
     if(approval.response!==1)throw new Error('已取消发布，构建结果保留在本地');
     publishing=true;try{return await deployment.publish(connection,directory);}finally{publishing=false;}
@@ -75,7 +87,7 @@ async function createProject(destination){
   return ensureProject(destination);
 }
 async function prepareRuntime(){
-  const logicalTarget=path.join(app.getPath('userData'),'Runtime','0.1.0');
+  const logicalTarget=path.join(app.getPath('userData'),'Runtime','0.1.1');
   await fs.mkdir(logicalTarget,{recursive:true});
   const target=await fs.realpath(logicalTarget);
   const marker=path.join(target,'ready.json');
@@ -83,7 +95,7 @@ async function prepareRuntime(){
   await fs.mkdir(target,{recursive:true});
   await fs.cp(path.join(resources,'template'),path.join(target,'template'),{recursive:true,force:false});
   const result=await execFileAsync(nodePath,[path.join(__dirname,'runtime.cjs'),'prepare',resources,target],{windowsHide:true});
-  await fs.writeFile(marker,JSON.stringify({version:'0.1.0'}));template=result.stdout.trim();
+  await fs.writeFile(marker,JSON.stringify({version:'0.1.1'}));template=result.stdout.trim();
 }
 async function chooseProject(create=false){
   if(publishing)return;
@@ -114,7 +126,7 @@ app.whenReady().then(async()=>{
   window.webContents.on('will-navigate',(event,url)=>{if(!/^http:\/\/127\.0\.0\.1:\d+(\/|$)/.test(url)&&!url.startsWith('data:')){event.preventDefault();if(/^https?:\/\//.test(url))shell.openExternal(url);}});
   window.webContents.session.setPermissionRequestHandler((_webContents,_permission,callback)=>callback(false));
   window.on('close',async event=>{if(closing)return;event.preventDefault();const result=await dialog.showMessageBox(window,{type:'question',message:publishing?'正在发布，请等待完成后退出。':'退出本地工作台？',detail:'请确认顶部状态已显示保存完成。',buttons:publishing?['继续等待']:['取消','退出'],defaultId:0,cancelId:0});if(result.response===1){closing=true;await stopServer();window.destroy();app.quit();}});
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'项目',submenu:[{label:'新建博客',click:()=>chooseProject(true)},{label:'打开已有博客',click:()=>chooseProject(false)},{label:'打开项目文件夹',click:()=>shell.openPath(project)},{type:'separator'},{role:'quit',label:'退出'}]},{label:'编辑',submenu:[{role:'undo',label:'撤销'},{role:'redo',label:'重做'},{type:'separator'},{role:'cut',label:'剪切'},{role:'copy',label:'复制'},{role:'paste',label:'粘贴'},{role:'selectAll',label:'全选'}]},{label:'视图',submenu:[{role:'reload',label:'刷新'},{role:'resetZoom',label:'重置缩放'},{role:'zoomIn',label:'放大'},{role:'zoomOut',label:'缩小'}]},{label:'帮助',submenu:[{label:'关于 Fuwari Studio',click:()=>dialog.showMessageBox(window,{title:'Fuwari Studio',message:'Fuwari Studio v0.1.0',detail:'Windows x64 · Fuwari 本地编辑、预览和 SFTP 发布\n项目与服务器凭据保存在当前 Windows 用户的数据目录。'})}]}]));
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'项目',submenu:[{label:'新建博客',click:()=>chooseProject(true)},{label:'打开已有博客',click:()=>chooseProject(false)},{label:'打开项目文件夹',click:()=>shell.openPath(project)},{type:'separator'},{role:'quit',label:'退出'}]},{label:'编辑',submenu:[{role:'undo',label:'撤销'},{role:'redo',label:'重做'},{type:'separator'},{role:'cut',label:'剪切'},{role:'copy',label:'复制'},{role:'paste',label:'粘贴'},{role:'selectAll',label:'全选'}]},{label:'视图',submenu:[{role:'reload',label:'刷新'},{role:'resetZoom',label:'重置缩放'},{role:'zoomIn',label:'放大'},{role:'zoomOut',label:'缩小'}]},{label:'帮助',submenu:[{label:'关于 Fuwari Studio',click:()=>dialog.showMessageBox(window,{title:'Fuwari Studio',message:'Fuwari Studio v0.1.1',detail:'Windows x64 · Fuwari 本地编辑、预览和 SFTP 发布\n项目与服务器凭据保存在当前 Windows 用户的数据目录。'})}]}]));
   try {
     window.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<body style="font-family:Segoe UI,sans-serif;background:#f7f8fa;color:#287d65;padding:80px"><h2>Fuwari Studio v0.1</h2><p>首次启动正在准备本地环境，请稍候…</p></body>'));
     await prepareRuntime();

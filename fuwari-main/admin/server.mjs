@@ -98,10 +98,11 @@ try {job=JSON.parse(await fs.readFile(path.join(localRoot,'last-build.json'),'ut
 async function api(req,res,url) {
   const route=url.pathname;
   if(req.method!=='GET' && job.status==='running') fail('正在构建或发布，请完成后再修改内容',423);
-  if (route === '/api/desktop' && req.method === 'GET') return json(res, {enabled:Boolean(process.send),version:'0.1.0',project:root});
+  if (route === '/api/desktop' && req.method === 'GET') return json(res, {enabled:Boolean(process.send),version:'0.1.1',project:root});
   if (route === '/api/connection' && req.method === 'GET') return json(res, await desktopCall('connection-get'));
   if (route === '/api/connection' && req.method === 'PUT') return json(res, await desktopCall('connection-save',await body(req)));
   if (route === '/api/connection/test' && req.method === 'POST') return json(res, await desktopCall('connection-test',await body(req)));
+  if (route === '/api/github/status' && req.method === 'GET') return json(res, await desktopCall('github-status',{commit:job.commit}));
   if (route === '/api/project/open' && req.method === 'POST') return json(res, await desktopCall('project-open'));
   if (route === '/api/project/folder' && req.method === 'POST') return json(res, await desktopCall('project-folder'));
   if (route === '/api/deploy' && req.method === 'POST') {
@@ -118,9 +119,9 @@ async function api(req,res,url) {
         process.env.SITE_URL=connection.siteUrl;
         try { await buildRelease(true); } finally { if(oldSite)process.env.SITE_URL=oldSite;else delete process.env.SITE_URL; }
         if(job.status==='failed') return;
-        job.status='running';addLog('\n正在通过 SFTP 发布…\n');
+        job.status='running';addLog(connection.provider==='github'?'\n正在提交 GitHub Pages…\n':'\n正在通过 SFTP 发布…\n');
         const result=await desktopCall('deploy',{directory:job.output});
-        addLog(result.message);job.status='success';job.deployed=true;job.finishedAt=new Date().toISOString();
+        addLog(result.message);job.status='success';job.deployed=!result.pending;job.pending=Boolean(result.pending);job.commit=result.commit;job.finishedAt=new Date().toISOString();
       }catch(error){addLog(error.message);job.status='failed';}
       finally {await fs.writeFile(path.join(localRoot,'last-build.json'),JSON.stringify(job,null,2));}
     })();

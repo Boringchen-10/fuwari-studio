@@ -4,7 +4,7 @@ dist/
 .local-admin/
 Fuwari Studio Data/
 staging*/
-release*/
+/release*/
 test-user-data/
 *.zip
 *.exe

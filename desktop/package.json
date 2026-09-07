@@ -1,7 +1,7 @@
 {
   "name": "fuwari-studio",
   "productName": "Fuwari Studio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local Fuwari editor, live preview and SFTP publishing",
   "main": "main.cjs",
   "private": true,
