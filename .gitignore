@@ -1,0 +1,17 @@
+node_modules/
+.astro/
+dist/
+.local-admin/
+Fuwari Studio Data/
+staging*/
+release*/
+test-user-data/
+*.zip
+*.exe
+*.log
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.bin

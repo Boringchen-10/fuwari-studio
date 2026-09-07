@@ -1,0 +1,42 @@
+{
+  "title": "我的博客",
+  "subtitle": "记录生活，分享热爱",
+  "name": "博主",
+  "bio": "欢迎来到我的小小空间。",
+  "avatar": "assets/images/avatar.jpg",
+  "banner": "assets/images/banner.jpg",
+  "hue": 340,
+  "bannerEnabled": true,
+  "creditText": "Unsplash",
+  "creditUrl": "https://unsplash.com/",
+  "tocEnabled": true,
+  "navigation": [
+    {
+      "name": "主页",
+      "url": "/",
+      "external": false
+    },
+    {
+      "name": "归档",
+      "url": "/archive/",
+      "external": false
+    },
+    {
+      "name": "关于",
+      "url": "/about/",
+      "external": false
+    },
+    {
+      "name": "友邻",
+      "url": "/friends/",
+      "external": false
+    }
+  ],
+  "links": [
+    {
+      "name": "RSS 订阅",
+      "url": "/rss.xml",
+      "icon": "fa6-solid:rss"
+    }
+  ]
+}
