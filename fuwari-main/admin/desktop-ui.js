@@ -1,4 +1,4 @@
-let serverConnection={};
+let serverConnection={},connectionProfiles={sftp:{},github:{}};
 const originalUpdateBuild=updateBuild;
 updateBuild=function(){
   originalUpdateBuild();
@@ -17,14 +17,17 @@ renderPublish=function(){
   const action=document.createElement('button');action.className='button primary';action.id='deploy-button';action.style.marginLeft='8px';action.innerHTML=icon('cloud-upload')+'构建并发布';
   document.querySelector('#build-button').after(action);
   const check=document.createElement('button');check.id='github-status-button';check.hidden=!state.job.commit;check.className='button';check.innerHTML=icon('refresh-cw')+'检查上线状态';action.after(check);
+  const targets=document.createElement('div');targets.className='publish-targets';targets.innerHTML='<strong>发布目标</strong><label><input type="checkbox" data-publish-target="sftp" checked> SFTP / SSH</label><label><input type="checkbox" data-publish-target="github"> GitHub Pages</label><span id="publish-target-status">读取连接配置…</span>';document.querySelector('#build-status').before(targets);
+  api('/api/connections').then(profiles=>{targets.querySelector('[data-publish-target="sftp"]').disabled=!profiles.sftp?.configured;targets.querySelector('[data-publish-target="github"]').disabled=!profiles.github?.configured;const available=targets.querySelectorAll('input:not(:disabled)');if(!profiles.sftp?.configured&&profiles.github?.configured)available[0].checked=true;targets.querySelector('#publish-target-status').textContent=available.length?'已保存的连接可供选择':'请先保存服务器连接';}).catch(()=>{targets.querySelector('#publish-target-status').textContent='连接配置读取失败';});
   check.addEventListener('click',async()=>{check.disabled=true;try{const result=await api('/api/github/status');toast(result.current&&result.status==='built'?'本次 GitHub Pages 已上线':`GitHub Pages：${result.status}${result.current?'':'（尚未匹配本次提交）'}`);}catch(error){toast(error.message,true);}finally{check.disabled=false;}});
-  action.addEventListener('click',async()=>{action.disabled=true;try{state.job=await api('/api/deploy',{method:'POST',body:{confirm:true}});updateBuild();}catch(error){toast(error.message,true);}finally{action.disabled=state.job.status==='running';}});
+  action.addEventListener('click',async()=>{action.disabled=true;try{const selected=[...targets.querySelectorAll('[data-publish-target]:checked')].map(input=>input.dataset.publishTarget);if(!selected.length){toast('至少选择一个发布目标',true);return;}state.job=await api('/api/deploy',{method:'POST',body:{confirm:true,targets:selected}});updateBuild();}catch(error){toast(error.message,true);}finally{action.disabled=state.job.status==='running';}});
   refreshIcons();
 };
 async function renderServer(forceSftp=false){
   const desktop=await api('/api/desktop');
   if(!desktop.enabled){$('#editor-pane').innerHTML=heading('服务器连接','Fuwari Studio v0.1')+'<p class="section-subtitle">请打开桌面程序配置服务器连接。浏览器开发版不保存服务器凭据。</p>';return;}
-  serverConnection=forceSftp?{}:await api('/api/connection');
+  if(!forceSftp)connectionProfiles=await api('/api/connections');
+  serverConnection=connectionProfiles.sftp||{};
   if(serverConnection.provider==='github')return renderGithub(serverConnection);
   const c=serverConnection;
   $('#editor-pane').innerHTML=heading('服务器连接','SFTP / SSH · 服务器资料仅保存在当前 Windows 用户下')+`
@@ -49,7 +52,7 @@ async function renderServer(forceSftp=false){
     if(!form.reportValidity())return;const buttons=form.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);$('#connection-result').textContent='正在连接服务器…';
     try{
       const input=collect();const result=await api(saveConnection?'/api/connection':'/api/connection/test',{method:saveConnection?'PUT':'POST',body:input});
-      serverConnection={...serverConnection,...input,...result};$('#fingerprint-display').hidden=false;$('#fingerprint-display').textContent=serverConnection.fingerprint;
+      serverConnection={...serverConnection,...input,...result};connectionProfiles.sftp={...serverConnection};$('#fingerprint-display').hidden=false;$('#fingerprint-display').textContent=serverConnection.fingerprint;
       $('#connection-result').textContent=saveConnection?'连接配置已加密保存。':result.message||'连接测试通过';
       if(saveConnection){form.elements.password.value='';form.elements.privateKey.value='';form.elements.passphrase.value='';toast('服务器配置已保存');}
     }catch(error){$('#connection-result').textContent=error.message;toast(error.message,true);}finally{buttons.forEach(b=>b.disabled=false);}
@@ -60,13 +63,13 @@ async function renderServer(forceSftp=false){
 function providerPicker(selected){
   const label=document.createElement('label');label.textContent='发布方式';
   const select=document.createElement('select');select.innerHTML='<option value="sftp">自有服务器 SFTP / SSH</option><option value="github">GitHub Pages</option>';select.value=selected;label.append(select);$('#editor-pane').prepend(label);
-  select.addEventListener('change',()=>{if(select.value==='github')renderGithub({});else renderSftpFromGithub();});
+  select.addEventListener('change',()=>{if(select.value==='github')renderGithub(connectionProfiles.github||{});else renderSftpFromGithub();});
 }
 async function renderSftpFromGithub(){await renderServer(true);}
 function renderGithub(c){
   $('#editor-pane').innerHTML=heading('GitHub Pages','GitHub.com')+`<form id="github-form"><label>GitHub 用户名<input name="owner" required value="${escape(c.owner||'')}" autocomplete="off"></label><label>主页仓库<input name="repo" required value="${escape(c.repo||'')}" placeholder="用户名.github.io"></label><label>访问令牌<input name="token" type="password" autocomplete="new-password" placeholder="${c.hasToken?'留空保留已保存令牌':'Fine-grained personal access token'}"></label><p><a href="https://github.com/new" target="_blank" rel="noreferrer">创建公开仓库</a> · <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">创建访问令牌</a></p><div class="dialog-actions"><button type="button" class="button" id="github-test">${icon('plug-zap')}测试连接</button><button class="button primary" type="submit">${icon('lock-keyhole')}保存连接</button></div><p id="github-result" role="status"></p></form>`;
   providerPicker('github');const form=$('#github-form');
   form.elements.owner.addEventListener('change',()=>{if(!form.elements.repo.value)form.elements.repo.value=form.elements.owner.value.trim()+'.github.io';});
-  async function submit(save){if(!form.reportValidity())return;const buttons=form.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);$('#github-result').textContent='正在连接 GitHub…';try{const result=await api(save?'/api/connection':'/api/connection/test',{method:save?'PUT':'POST',body:{provider:'github',...Object.fromEntries(new FormData(form))}});$('#github-result').textContent=save?'GitHub 连接已加密保存':result.message;if(save){serverConnection=result;form.elements.token.value='';form.elements.token.placeholder='留空保留已保存令牌';}}catch(error){$('#github-result').textContent=error.message;}finally{buttons.forEach(b=>b.disabled=false);}}
+  async function submit(save){if(!form.reportValidity())return;const buttons=form.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);$('#github-result').textContent='正在连接 GitHub…';try{const result=await api(save?'/api/connection':'/api/connection/test',{method:save?'PUT':'POST',body:{provider:'github',...Object.fromEntries(new FormData(form))}});$('#github-result').textContent=save?'GitHub 连接已加密保存':result.message;if(save){connectionProfiles.github={...connectionProfiles.github,...result};serverConnection=connectionProfiles.github;form.elements.token.value='';form.elements.token.placeholder='留空保留已保存令牌';}}catch(error){$('#github-result').textContent=error.message;}finally{buttons.forEach(b=>b.disabled=false);}}
   $('#github-test').addEventListener('click',()=>submit(false));form.addEventListener('submit',event=>{event.preventDefault();submit(true);});refreshIcons();
 }

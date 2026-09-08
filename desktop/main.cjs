@@ -20,9 +20,17 @@ const configFile=()=>path.join(app.getPath('userData'),'studio.json');
 async function readAppConfig(){try{return JSON.parse(await fs.readFile(configFile(),'utf8'));}catch{return {};}}
 async function writeAppConfig(data){await fs.mkdir(app.getPath('userData'),{recursive:true});const temp=configFile()+'.tmp';await fs.writeFile(temp,JSON.stringify(data,null,2));await fs.rename(temp,configFile());}
 const credentialFile=()=>path.join(app.getPath('userData'),'connections',createHash('sha256').update(project.toLowerCase()).digest('hex')+'.bin');
-async function readConnection(){
-  try{return JSON.parse(safeStorage.decryptString(await fs.readFile(credentialFile())));}catch(error){if(error.code==='ENOENT')return {};throw new Error('无法解密服务器资料，请在当前 Windows 用户下重新配置。');}
+async function readConnection(provider){
+  try{const raw=JSON.parse(safeStorage.decryptString(await fs.readFile(credentialFile())));return provider&&raw?.[provider]?raw[provider]:raw;}catch(error){if(error.code==='ENOENT')return {};throw new Error('无法解密服务器资料，请在当前 Windows 用户下重新配置。');}
 }
+async function readConnections(){
+  const raw=await readConnection();
+  if(raw&&typeof raw==='object'&&(raw.sftp||raw.github))return raw;
+  if(raw?.provider==='github')return {github:raw};
+  if(raw?.provider==='sftp'||raw?.host)return {sftp:raw};
+  return {};
+}
+async function writeConnections(connections){const file=credentialFile();await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,safeStorage.encryptString(JSON.stringify(connections)));}
 function publicConnection(connection){const {password,privateKey,passphrase,token,...data}=connection;return {...data,configured:connection.provider==='github'?Boolean(token):Boolean(connection.fingerprint),hasToken:Boolean(token),hasPassword:Boolean(password),hasPrivateKey:Boolean(privateKey)};}
 async function mergedConnection(input){
   const old=await readConnection();const same=old.host===input.host&&Number(old.port)===Number(input.port)&&old.username===input.username&&old.authType===input.authType;
@@ -33,8 +41,9 @@ async function handle(action,data){
   if(action==='studio-settings-get'){const saved=await readAppConfig();return {...(saved.studio||{}),cacheDir:saved.studio?.cacheDir||app.getPath('userData')};}
   if(action==='studio-settings-choose'){const picked=await dialog.showOpenDialog(window,{title:'选择本地缓存目录',properties:['openDirectory','createDirectory']});return picked.canceled?{canceled:true}:{canceled:false,cacheDir:picked.filePaths[0]};}
   if(action==='studio-settings-save'){const saved=await readAppConfig();const studio={...(saved.studio||{}),hue:Math.max(0,Math.min(360,Number(data.hue)||150)),accent:/^#[0-9a-f]{6}$/i.test(String(data.accent||''))?data.accent:'#287d65',theme:['system','light','dark'].includes(data.theme)?data.theme:'system',device:['desktop','mobile'].includes(data.device)?data.device:'desktop',autosaveDelay:Math.max(300,Math.min(5000,Number(data.autosaveDelay)||700)),cacheDir:String(data.cacheDir||'').trim()};await writeAppConfig({...saved,studio});return studio;}
-  if(action==='connection-get')return publicConnection(await readConnection());
-  if(action==='github-status')return github.status(await readConnection(),data.commit);
+  if(action==='connections-get'){const all=await readConnections();return {sftp:publicConnection(all.sftp||{}),github:publicConnection(all.github||{})};}
+  if(action==='connection-get')return publicConnection(await readConnection(data?.provider));
+  if(action==='github-status')return github.status(await readConnection('github'),data.commit);
   if(action==='connection-test'){
     const config=await mergedConnection(data);if(config.provider==='github')return github.test(config);let result=await deployment.test(config);
     if(result.needsTrust){
@@ -50,12 +59,28 @@ async function handle(action,data){
     const config=await mergedConnection(data);
     if(config.provider==='github')await github.test(config);
     else {if(!config.fingerprint)throw new Error('请先测试连接并核对服务器指纹');const result=await deployment.test(config);if(result.needsTrust)throw new Error('服务器指纹不匹配，请重新测试连接');}
-    const file=credentialFile();await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,safeStorage.encryptString(JSON.stringify(config)));return publicConnection(config);
+    const all=await readConnections();all[config.provider==='github'?'github':'sftp']=config;await writeConnections(all);return publicConnection(config);
   }
   if(action==='deploy'){
     if(publishing)throw new Error('已有发布正在执行');
     const directory=await fs.realpath(data.directory);const allowed=path.join(project,'.local-admin','releases')+path.sep;
     if(!directory.startsWith(allowed))throw new Error('只能发布当前博客生成的发布包');
+    const all=await readConnections();const targets=Array.isArray(data?.targets)&&data.targets.length?data.targets:['sftp'];const selected=targets.filter(target=>target==='sftp'||target==='github').filter(target=>all[target]);
+    if(!selected.length)throw new Error('请先保存至少一个发布连接');
+    publishing=true;
+    try{
+      const approval=await dialog.showMessageBox(window,{type:'question',title:'确认发布',message:'确认发布到已选择的目标？',detail:selected.map(target=>target==='github'?`GitHub Pages：${all.github.owner}/${all.github.repo}`:`SFTP：${all.sftp.siteUrl}\n目录：${all.sftp.remoteRoot}`).join('\n\n')+'\n\n将上传构建后的网站，历史版本会保留。',buttons:['取消','发布'],defaultId:0,cancelId:0,noLink:true});
+      if(approval.response!==1)throw new Error('已取消发布');
+      const results=[];
+      for(const target of selected){
+        try{const result=target==='github'?await github.publish(all.github,directory):await deployment.publish(all.sftp,directory);results.push({target,ok:true,result});}
+        catch(error){results.push({target,ok:false,error:error.message});}
+      }
+      const failed=results.filter(item=>!item.ok);if(failed.length===results.length)throw new Error(results.map(item=>`${item.target==='github'?'GitHub Pages':'SFTP'}：${item.error}`).join('\n'));
+      return {pending:results.some(item=>item.result?.pending),commit:results.find(item=>item.result?.commit)?.result.commit,message:results.map(item=>`${item.target==='github'?'GitHub Pages':'SFTP'}：${item.ok?(item.result.message||'发布成功'):item.error}`).join('\n')};
+    }finally{publishing=false;}
+    /* legacy branch retained below for source compatibility */
+    /*
     const connection=await readConnection();
     if(connection.provider==='github'){
       publishing=true;
@@ -67,7 +92,7 @@ async function handle(action,data){
     }
     const approval=await dialog.showMessageBox(window,{type:'question',title:'发布到服务器',message:'确认更新线上博客？',detail:`网站：${connection.siteUrl}\n服务器：${connection.username}@${connection.host}:${connection.port}\n目录：${connection.remoteRoot}\n\n将替换同名网站文件，并清理上次由本程序发布、此次已移除的文件。旧文件会保留远程备份。`,buttons:['取消','发布'],defaultId:0,cancelId:0,noLink:true});
     if(approval.response!==1)throw new Error('已取消发布，构建结果保留在本地');
-    publishing=true;try{return await deployment.publish(connection,directory);}finally{publishing=false;}
+    publishing=true;try{return await deployment.publish(connection,directory);}finally{publishing=false;} */
   }
   if(action==='project-folder'){await shell.openPath(project);return {ok:true};}
   if(action==='project-open'){

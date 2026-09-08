@@ -102,6 +102,7 @@ async function api(req,res,url) {
   if (route === '/api/desktop/settings' && req.method === 'GET') return json(res, await desktopCall('studio-settings-get'));
   if (route === '/api/desktop/settings' && req.method === 'PUT') return json(res, await desktopCall('studio-settings-save', await body(req)));
   if (route === '/api/desktop/settings/choose' && req.method === 'POST') return json(res, await desktopCall('studio-settings-choose'));
+  if (route === '/api/connections' && req.method === 'GET') return json(res, await desktopCall('connections-get'));
   if (route === '/api/connection' && req.method === 'GET') return json(res, await desktopCall('connection-get'));
   if (route === '/api/connection' && req.method === 'PUT') return json(res, await desktopCall('connection-save',await body(req)));
   if (route === '/api/connection/test' && req.method === 'POST') return json(res, await desktopCall('connection-test',await body(req)));
