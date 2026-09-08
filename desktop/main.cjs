@@ -90,7 +90,9 @@ async function createProject(destination){
   return ensureProject(destination);
 }
 async function prepareRuntime(){
-  const logicalTarget=path.join(app.getPath('userData'),'Runtime','0.1.2');
+  const saved=await readAppConfig();
+  const cacheRoot=String(saved.studio?.cacheDir||'').trim()||app.getPath('userData');
+  const logicalTarget=path.join(cacheRoot,'Runtime','0.1.2');
   await fs.mkdir(logicalTarget,{recursive:true});
   const target=await fs.realpath(logicalTarget);
   const marker=path.join(target,'ready.json');

@@ -12,7 +12,7 @@ async function api(url, options={}) {
   const data=await response.json();if(!response.ok)throw Object.assign(new Error(data.error || '操作失败'),{status:response.status});return data;
 }
 function status(text,error=false){$('#save-status').innerHTML=icon(error?'circle-alert':text.includes('保存中')?'loader-circle':'check')+escape(text);$('#save-status').classList.toggle('error',error);refreshIcons();}
-function markDirty(){version++;blocked=false;status('等待保存');clearTimeout(timer);timer=setTimeout(()=>save().catch(()=>{}),700);}
+function markDirty(){version++;blocked=false;status('等待保存');clearTimeout(timer);timer=setTimeout(()=>save().catch(()=>{}),Math.max(300,Math.min(5000,Number(studioSettings.autosaveDelay)||700)));}
 function media(src,slug=''){if(!src)return '';if(/^https?:/.test(src))return src;return `/media?path=${encodeURIComponent(src)}&slug=${encodeURIComponent(slug)}`;}
 function stats(){ $('#nav-count').textContent=state.posts.length;$('#draft-count').textContent=state.posts.filter(post=>post.draft).length;$('#sidebar-name').textContent=state.settings.name;$('#sidebar-avatar').src=media(state.settings.avatar); }
 function afterSavePreview(){clearTimeout(previewTimer);previewTimer=setTimeout(()=>setPreview(previewPath,true),700);}
@@ -161,4 +161,4 @@ function updateBuild(){if(view!=='publish')return;const job=state.job;$('#build-
 window.addEventListener('hashchange',()=>route());
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();save().then(()=>toast('已保存到本地')).catch(()=>{});}});
 async function poll(){try{const data=await api('/api/status');const wasReady=state.previewReady;const previous=state.job.status;Object.assign(state,data);$('#connection-label').textContent='仅在本机运行';if(state.previewReady&&!wasReady)setPreview(previewPath,true);if(state.previewError){$('#preview-loading').hidden=false;$('#preview-loading').textContent=state.previewError;}if(previous!==state.job.status||state.job.status==='running')updateBuild();}catch{$('#connection-label').textContent='本地连接已断开';}finally{setTimeout(poll,2000);}}
-(async()=>{try{studioSettings=await api('/api/desktop/settings');applyStudioTheme(studioSettings);state=await api('/api/bootstrap');stats();await route();if(state.previewReady)setPreview(previewPath,true);poll();}catch(error){$('#editor-pane').innerHTML=`<div class="empty">${escape(error.message)}<p>请刷新页面重试</p></div>`;}refreshIcons();})();
+(async()=>{try{studioSettings=await api('/api/desktop/settings');applyStudioTheme(studioSettings);device=studioSettings.device==='mobile'?'mobile':'desktop';document.querySelectorAll('[data-device]').forEach(item=>item.classList.toggle('active',item.dataset.device===device));state=await api('/api/bootstrap');stats();await route();if(state.previewReady)setPreview(previewPath,true);poll();}catch(error){$('#editor-pane').innerHTML=`<div class="empty">${escape(error.message)}<p>请刷新页面重试</p>`;}refreshIcons();})();
