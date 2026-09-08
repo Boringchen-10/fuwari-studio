@@ -4,7 +4,8 @@ const icon = name => `<i data-lucide="${name}"></i>`;
 const refreshIcons = () => window.lucide?.createIcons();
 let state, current, view='posts', version=0, savedVersion=0, timer, saving, blocked=false, loadSequence=0;
 let previewPath='/', device='desktop', previewDark=false, previewTimer, uploadTarget, toastTimer;
-const titles={posts:'全部文章',drafts:'草稿箱',profile:'个人资料',appearance:'外观与导航',about:'关于页面',friends:'友情链接',publish:'发布中心',trash:'回收站',post:'编辑文章',server:'服务器连接'};
+let studioSettings={theme:'system',hue:150,device:'desktop',autosaveDelay:700};
+const titles={posts:'全部文章',drafts:'草稿箱',profile:'个人资料',appearance:'外观与导航',about:'关于页面',friends:'友情链接',publish:'发布中心',trash:'回收站',post:'编辑文章',server:'服务器连接',settings:'工作台设置'};
 function toast(message,error=false){$('#toast').textContent=message;$('#toast').className=error?'error':'';$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').hidden=true,6000);}
 async function api(url, options={}) {
   const response=await fetch(url,{...options,headers:{'Content-Type':'application/json','X-CSRF-Token':state?.csrf || '',...options.headers},body:options.body===undefined?undefined:JSON.stringify(options.body)});
@@ -48,6 +49,8 @@ function resizePreview(){
   const frame=$('#preview-frame');$('#frame-wrap').style.width=`${width*scale}px`;frame.style.width=`${width}px`;frame.style.height=`${Math.max(600,(stage.clientHeight-32)/scale)}px`;frame.style.transform=`scale(${scale})`;
 }
 function sendPreviewSettings(){if(!state)return;$('#preview-frame').contentWindow?.postMessage({type:'blog-studio-appearance',hue:Number(current&&['profile','appearance'].includes(view)?current.hue:state.settings.hue),dark:previewDark},state.previewOrigin);}
+function applyStudioTheme(settings=studioSettings){studioSettings={...studioSettings,...settings};const dark=studioSettings.theme==='dark'||(studioSettings.theme==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);const accent=`hsl(${Number(studioSettings.hue)||150} 48% 34%)`;document.documentElement.style.setProperty('--accent',accent);document.documentElement.style.setProperty('--studio-accent',accent);document.documentElement.dataset.theme=dark?'dark':'light';}
+const systemThemeMedia=window.matchMedia('(prefers-color-scheme: dark)');systemThemeMedia.addEventListener?.('change',()=>{if(studioSettings.theme==='system')applyStudioTheme();});
 $('#preview-frame').addEventListener('load',()=>{if(!state?.previewReady)return;$('#preview-loading').hidden=true;$('#preview-status').textContent='与本地内容同步';sendPreviewSettings();});
 window.addEventListener('resize',resizePreview);
 document.querySelectorAll('[data-device]').forEach(button=>button.addEventListener('click',()=>{device=button.dataset.device;document.querySelectorAll('[data-device]').forEach(item=>item.classList.toggle('active',item===button));resizePreview();}));
@@ -69,10 +72,29 @@ async function route(){
     else if(['about','friends'].includes(view)){const data=await api(`/api/pages/${view}`);if(sequence!==loadSequence)return;current=data;renderPage();setPreview(`/${view}/`);}
     else if(view==='publish'){renderPublish();setPreview('/');}
     else if(view==='server'){await renderServer();setPreview('/');}
+    else if(view==='settings'){await renderStudioSettings();setPreview('/');}
     else if(view==='trash'){state.trash=await api('/api/trash');if(sequence!==loadSequence)return;renderTrash();setPreview('/');}
     else {state.posts=await api('/api/posts');if(sequence!==loadSequence)return;renderList();setPreview('/');}
     stats();refreshIcons();$('#editor-pane').scrollTop=0;
   } catch(error){$('#editor-pane').innerHTML=`<div class="empty">${escape(error.message)}<p><a href="#posts">返回文章列表</a></p></div>`;}
+}
+async function renderStudioSettings(){
+  const s=await api('/api/desktop/settings');
+  const hue=Number.isFinite(Number(s.hue))?Number(s.hue):150;
+  $('#editor-pane').innerHTML=heading('工作台设置','像调整 Fuwari 外观一样，实时改变 Blog Studio 的工作台。')+`<div class="settings-card settings-hero"><div><span class="settings-eyebrow">BLOG STUDIO</span><h2>让工作台更像你的空间</h2><p>颜色和明暗会立即应用到当前窗口。</p></div><span class="settings-orb" id="studio-color-orb"></span></div><div class="settings-card"><div class="settings-card-heading"><div><h2>主题色</h2><p>拖动色相滑条，按钮、选中项和强调色会即时更新。</p></div><output id="studio-hue-value">${hue}°</output></div><div class="studio-hue-track"></div><input id="studio-hue" class="studio-hue-range" type="range" min="0" max="360" value="${hue}" aria-label="工作台主题色"><div class="studio-color-swatches"><button type="button" data-hue="150" style="--swatch:hsl(150 48% 34%)" aria-label="绿色主题"></button><button type="button" data-hue="205" style="--swatch:hsl(205 66% 42%)" aria-label="蓝色主题"></button><button type="button" data-hue="265" style="--swatch:hsl(265 55% 50%)" aria-label="紫色主题"></button><button type="button" data-hue="340" style="--swatch:hsl(340 62% 46%)" aria-label="玫红主题"></button><button type="button" data-hue="28" style="--swatch:hsl(28 78% 48%)" aria-label="橙色主题"></button></div></div><div class="settings-card"><div class="settings-card-heading"><div><h2>明暗模式</h2><p>选择固定模式，或跟随 Windows 的系统主题。</p></div></div><div class="mode-segmented" role="group" aria-label="明暗模式"><button type="button" data-theme="light">${icon('sun')}浅色</button><button type="button" data-theme="dark">${icon('moon')}深色</button><button type="button" data-theme="system">${icon('monitor')}跟随系统</button></div></div><div class="settings-card"><div class="settings-card-heading"><div><h2>本地缓存目录</h2><p>用于保存本机工作台数据。选择后立即保存，重启工作台后完整迁移。</p></div></div><div class="folder-picker"><input id="studio-cache" value="${escape(s.cacheDir||'')}" placeholder="默认位置"><button class="button" id="studio-choose-folder">${icon('folder-open')}选择文件夹</button></div><div class="settings-inline"><label>自动保存延迟（毫秒）<input id="studio-delay" type="number" min="300" max="5000" step="100" value="${Number(s.autosaveDelay||700)}"></label><label>默认预览设备<select id="studio-device"><option value="desktop">桌面</option><option value="mobile">手机</option></select></label></div><div class="dialog-actions"><button class="button" id="studio-reset">恢复默认</button><button class="button primary" id="studio-save">${icon('save')}保存设置</button></div><p id="studio-result" class="section-subtitle"></p></div>`;
+  $('#studio-device').value=s.device||'desktop';
+  let current={...s,hue};
+  const systemDark=()=>window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const apply=()=>{applyStudioTheme({theme:current.theme,hue:current.hue});const accent=`hsl(${current.hue} 48% 34%)`;$('#studio-color-orb').style.background=accent;$('#studio-hue-value').value=`${current.hue}°`;$('#studio-hue-value').textContent=`${current.hue}°`;document.querySelectorAll('[data-theme]').forEach(b=>b.classList.toggle('active',b.dataset.theme===current.theme));};
+  const save=async()=>{await api('/api/desktop/settings',{method:'PUT',body:{hue:current.hue,theme:current.theme,device:$('#studio-device').value,autosaveDelay:Math.max(300,Math.min(5000,Number($('#studio-delay').value)||700)),cacheDir:$('#studio-cache').value.trim()}});};
+  const saveQuiet=()=>save().catch(error=>toast(error.message,true));
+  $('#studio-hue').addEventListener('input',()=>{current.hue=Number($('#studio-hue').value);apply();saveQuiet();});
+  document.querySelectorAll('[data-hue]').forEach(b=>b.addEventListener('click',()=>{$('#studio-hue').value=b.dataset.hue;current.hue=Number(b.dataset.hue);apply();saveQuiet();}));
+  document.querySelectorAll('[data-theme]').forEach(b=>b.addEventListener('click',()=>{current.theme=b.dataset.theme;apply();saveQuiet();}));
+  const mediaQuery=window.matchMedia('(prefers-color-scheme: dark)');mediaQuery.addEventListener?.('change',()=>{if(current.theme==='system')apply();});
+  $('#studio-choose-folder').onclick=async()=>{try{const picked=await api('/api/desktop/settings/choose',{method:'POST'});if(!picked.canceled){$('#studio-cache').value=picked.cacheDir;current.cacheDir=picked.cacheDir;await save();$('#studio-result').textContent='缓存目录已保存。';}}catch(e){toast(e.message,true);}};
+  $('#studio-save').onclick=async()=>{try{await save();$('#studio-result').textContent='设置已保存，当前窗口已立即应用。';toast('工作台设置已保存');}catch(e){toast(e.message,true);}};
+  $('#studio-reset').onclick=async()=>{current={...current,hue:150,theme:'system',device:'desktop',autosaveDelay:700,cacheDir:''};$('#studio-hue').value=150;$('#studio-device').value='desktop';$('#studio-delay').value=700;$('#studio-cache').value='';apply();await saveQuiet();};apply();refreshIcons();
 }
 function heading(title,subtitle){return `<div class="section-heading"><h1>${title}</h1></div><p class="section-subtitle">${subtitle}</p>`;}
 function renderList(){
@@ -139,4 +161,4 @@ function updateBuild(){if(view!=='publish')return;const job=state.job;$('#build-
 window.addEventListener('hashchange',()=>route());
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();save().then(()=>toast('已保存到本地')).catch(()=>{});}});
 async function poll(){try{const data=await api('/api/status');const wasReady=state.previewReady;const previous=state.job.status;Object.assign(state,data);$('#connection-label').textContent='仅在本机运行';if(state.previewReady&&!wasReady)setPreview(previewPath,true);if(state.previewError){$('#preview-loading').hidden=false;$('#preview-loading').textContent=state.previewError;}if(previous!==state.job.status||state.job.status==='running')updateBuild();}catch{$('#connection-label').textContent='本地连接已断开';}finally{setTimeout(poll,2000);}}
-(async()=>{try{state=await api('/api/bootstrap');stats();await route();if(state.previewReady)setPreview(previewPath,true);poll();}catch(error){$('#editor-pane').innerHTML=`<div class="empty">${escape(error.message)}<p>请刷新页面重试</p></div>`;}refreshIcons();})();
+(async()=>{try{studioSettings=await api('/api/desktop/settings');applyStudioTheme(studioSettings);state=await api('/api/bootstrap');stats();await route();if(state.previewReady)setPreview(previewPath,true);poll();}catch(error){$('#editor-pane').innerHTML=`<div class="empty">${escape(error.message)}<p>请刷新页面重试</p></div>`;}refreshIcons();})();

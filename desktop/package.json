@@ -1,8 +1,8 @@
 {
-  "name": "fuwari-studio",
-  "productName": "Fuwari Studio",
-  "version": "0.1.1",
-  "description": "Local Fuwari editor, live preview and SFTP publishing",
+  "name": "blog-studio",
+  "productName": "Blog Studio",
+  "version": "0.1.2",
+  "description": "Local Fuwari editor, live preview and SFTP or GitHub Pages publishing",
   "main": "main.cjs",
   "private": true,
   "author": "Fuwari Studio contributors",

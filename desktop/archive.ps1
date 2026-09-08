@@ -1,9 +1,9 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$releaseRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../release-v011'))
-$appRoot = Join-Path $releaseRoot 'Fuwari Studio-win32-x64'
-$archivePath = Join-Path $releaseRoot 'Fuwari-Studio-v0.1.1-Windows-x64.zip'
+$releaseRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../release-v012'))
+$appRoot = Join-Path $releaseRoot 'Blog Studio-win32-x64'
+$archivePath = Join-Path $releaseRoot 'Blog-Studio-v0.1.2-Windows-x64.zip'
 $stream = [IO.File]::Open($archivePath, [IO.FileMode]::Create)
 $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create)
 $pending = [Collections.Generic.Stack[string]]::new()

@@ -30,6 +30,9 @@ async function mergedConnection(input){
   return deployment.validate({...input,password:input.password||(same?old.password:''),privateKey:input.privateKey||(same?old.privateKey:''),passphrase:input.passphrase||(same?old.passphrase:'')});
 }
 async function handle(action,data){
+  if(action==='studio-settings-get'){const saved=await readAppConfig();return {...(saved.studio||{}),cacheDir:saved.studio?.cacheDir||app.getPath('userData')};}
+  if(action==='studio-settings-choose'){const picked=await dialog.showOpenDialog(window,{title:'选择本地缓存目录',properties:['openDirectory','createDirectory']});return picked.canceled?{canceled:true}:{canceled:false,cacheDir:picked.filePaths[0]};}
+  if(action==='studio-settings-save'){const saved=await readAppConfig();const studio={...(saved.studio||{}),hue:Math.max(0,Math.min(360,Number(data.hue)||150)),accent:/^#[0-9a-f]{6}$/i.test(String(data.accent||''))?data.accent:'#287d65',theme:['system','light','dark'].includes(data.theme)?data.theme:'system',device:['desktop','mobile'].includes(data.device)?data.device:'desktop',autosaveDelay:Math.max(300,Math.min(5000,Number(data.autosaveDelay)||700)),cacheDir:String(data.cacheDir||'').trim()};await writeAppConfig({...saved,studio});return studio;}
   if(action==='connection-get')return publicConnection(await readConnection());
   if(action==='github-status')return github.status(await readConnection(),data.commit);
   if(action==='connection-test'){
@@ -87,7 +90,7 @@ async function createProject(destination){
   return ensureProject(destination);
 }
 async function prepareRuntime(){
-  const logicalTarget=path.join(app.getPath('userData'),'Runtime','0.1.1');
+  const logicalTarget=path.join(app.getPath('userData'),'Runtime','0.1.2');
   await fs.mkdir(logicalTarget,{recursive:true});
   const target=await fs.realpath(logicalTarget);
   const marker=path.join(target,'ready.json');
@@ -95,7 +98,7 @@ async function prepareRuntime(){
   await fs.mkdir(target,{recursive:true});
   await fs.cp(path.join(resources,'template'),path.join(target,'template'),{recursive:true,force:false});
   const result=await execFileAsync(nodePath,[path.join(__dirname,'runtime.cjs'),'prepare',resources,target],{windowsHide:true});
-  await fs.writeFile(marker,JSON.stringify({version:'0.1.1'}));template=result.stdout.trim();
+  await fs.writeFile(marker,JSON.stringify({version:'0.1.2'}));template=result.stdout.trim();
 }
 async function chooseProject(create=false){
   if(publishing)return;
@@ -109,7 +112,7 @@ async function chooseProject(create=false){
 }
 async function stopServer(){if(!child)return;const old=child;child=null;await new Promise(resolve=>{old.once('exit',resolve);old.send({type:'shutdown'});setTimeout(()=>{old.kill();resolve();},4000).unref();});}
 async function startServer(){
-  window.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<body style="font-family:Segoe UI, sans-serif;background:#f7f8fa;color:#287d65;display:grid;place-items:center;height:90vh"><div><h2>Fuwari Studio v0.1</h2><p>正在打开本地博客…</p></div></body>'));
+  window.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<body style="font-family:Segoe UI, sans-serif;background:#f7f8fa;color:#287d65;display:grid;place-items:center;height:90vh"><div><h2>Blog Studio v0.1.2</h2><p>正在打开本地博客…</p></div></body>'));
   const logDir=path.join(app.getPath('userData'),'logs');await fs.mkdir(logDir,{recursive:true});
   child=fork(path.join(template,'admin/server.mjs'),[],{execPath:nodePath,cwd:project,windowsHide:true,silent:true,env:{...process.env,BLOG_PROJECT_ROOT:project,BLOG_ADMIN_PORT:'4310',BLOG_PREVIEW_PORT:'4322',ASTRO_TELEMETRY_DISABLED:'1'}});
   child.on('message',async message=>{if(!message?.id)return;const active=child;try{const result=await handle(message.action,message.data);if(active?.connected)active.send({reply:message.id,result});}catch(error){if(active?.connected)active.send({reply:message.id,error:error.message});}});
@@ -120,13 +123,13 @@ async function startServer(){
 }
 app.whenReady().then(async()=>{
   if(!single)return;
-  window=new BrowserWindow({width:1450,height:950,minWidth:900,minHeight:650,title:'Fuwari Studio v0.1',backgroundColor:'#f7f8fa',webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true}});
+  window=new BrowserWindow({width:1450,height:950,minWidth:900,minHeight:650,title:'Blog Studio v0.1.2',backgroundColor:'#f7f8fa',webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true}});
   window.once('ready-to-show',()=>window.show());
   window.webContents.setWindowOpenHandler(({url})=>{if(/^https?:\/\//.test(url))shell.openExternal(url);return {action:'deny'};});
   window.webContents.on('will-navigate',(event,url)=>{if(!/^http:\/\/127\.0\.0\.1:\d+(\/|$)/.test(url)&&!url.startsWith('data:')){event.preventDefault();if(/^https?:\/\//.test(url))shell.openExternal(url);}});
   window.webContents.session.setPermissionRequestHandler((_webContents,_permission,callback)=>callback(false));
   window.on('close',async event=>{if(closing)return;event.preventDefault();const result=await dialog.showMessageBox(window,{type:'question',message:publishing?'正在发布，请等待完成后退出。':'退出本地工作台？',detail:'请确认顶部状态已显示保存完成。',buttons:publishing?['继续等待']:['取消','退出'],defaultId:0,cancelId:0});if(result.response===1){closing=true;await stopServer();window.destroy();app.quit();}});
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'项目',submenu:[{label:'新建博客',click:()=>chooseProject(true)},{label:'打开已有博客',click:()=>chooseProject(false)},{label:'打开项目文件夹',click:()=>shell.openPath(project)},{type:'separator'},{role:'quit',label:'退出'}]},{label:'编辑',submenu:[{role:'undo',label:'撤销'},{role:'redo',label:'重做'},{type:'separator'},{role:'cut',label:'剪切'},{role:'copy',label:'复制'},{role:'paste',label:'粘贴'},{role:'selectAll',label:'全选'}]},{label:'视图',submenu:[{role:'reload',label:'刷新'},{role:'resetZoom',label:'重置缩放'},{role:'zoomIn',label:'放大'},{role:'zoomOut',label:'缩小'}]},{label:'帮助',submenu:[{label:'关于 Fuwari Studio',click:()=>dialog.showMessageBox(window,{title:'Fuwari Studio',message:'Fuwari Studio v0.1.1',detail:'Windows x64 · Fuwari 本地编辑、预览和 SFTP 发布\n项目与服务器凭据保存在当前 Windows 用户的数据目录。'})}]}]));
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'项目',submenu:[{label:'新建博客',click:()=>chooseProject(true)},{label:'打开已有博客',click:()=>chooseProject(false)},{label:'打开项目文件夹',click:()=>shell.openPath(project)},{type:'separator'},{role:'quit',label:'退出'}]},{label:'设置',submenu:[{label:'打开设置面板',click:()=>window.loadURL(`http://127.0.0.1:${process.env.BLOG_ADMIN_PORT||4310}/#settings`)}]},{label:'编辑',submenu:[{role:'undo',label:'撤销'},{role:'redo',label:'重做'},{type:'separator'},{role:'cut',label:'剪切'},{role:'copy',label:'复制'},{role:'paste',label:'粘贴'},{role:'selectAll',label:'全选'}]},{label:'视图',submenu:[{role:'reload',label:'刷新'},{role:'resetZoom',label:'重置缩放'},{role:'zoomIn',label:'放大'},{role:'zoomOut',label:'缩小'}]},{label:'帮助',submenu:[{label:'关于 Blog Studio',click:()=>dialog.showMessageBox(window,{title:'Blog Studio',message:'Blog Studio v0.1.2',detail:'Windows x64 · Fuwari 本地编辑、预览和发布\n项目与服务器凭据保存在当前 Windows 用户的数据目录。'})}]}]));
   try {
     window.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<body style="font-family:Segoe UI,sans-serif;background:#f7f8fa;color:#287d65;padding:80px"><h2>Fuwari Studio v0.1</h2><p>首次启动正在准备本地环境，请稍候…</p></body>'));
     await prepareRuntime();

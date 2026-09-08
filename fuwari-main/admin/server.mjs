@@ -98,7 +98,10 @@ try {job=JSON.parse(await fs.readFile(path.join(localRoot,'last-build.json'),'ut
 async function api(req,res,url) {
   const route=url.pathname;
   if(req.method!=='GET' && job.status==='running') fail('正在构建或发布，请完成后再修改内容',423);
-  if (route === '/api/desktop' && req.method === 'GET') return json(res, {enabled:Boolean(process.send),version:'0.1.1',project:root});
+  if (route === '/api/desktop' && req.method === 'GET') return json(res, {enabled:Boolean(process.send),version:'0.1.2',project:root});
+  if (route === '/api/desktop/settings' && req.method === 'GET') return json(res, await desktopCall('studio-settings-get'));
+  if (route === '/api/desktop/settings' && req.method === 'PUT') return json(res, await desktopCall('studio-settings-save', await body(req)));
+  if (route === '/api/desktop/settings/choose' && req.method === 'POST') return json(res, await desktopCall('studio-settings-choose'));
   if (route === '/api/connection' && req.method === 'GET') return json(res, await desktopCall('connection-get'));
   if (route === '/api/connection' && req.method === 'PUT') return json(res, await desktopCall('connection-save',await body(req)));
   if (route === '/api/connection/test' && req.method === 'POST') return json(res, await desktopCall('connection-test',await body(req)));
