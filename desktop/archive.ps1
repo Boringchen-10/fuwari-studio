@@ -18,7 +18,7 @@ try {
             $attributes = [IO.File]::GetAttributes($entry)
             if ($attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Unexpected link in distribution: $entry" }
             if ($attributes -band [IO.FileAttributes]::Directory) { $pending.Push($entry); continue }
-            $relative = [IO.Path]::GetRelativePath($releaseRoot, $entry).Replace('\', '/')
+            $relative = $entry.Substring($releaseRoot.Length + 1).Replace('\', '/')
             [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $entry, $relative, [IO.Compression.CompressionLevel]::Optimal) | Out-Null
             $count++
         }
