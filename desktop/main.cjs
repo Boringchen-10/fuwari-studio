@@ -33,7 +33,7 @@ async function readConnections(){
 async function writeConnections(connections){const file=credentialFile();await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,safeStorage.encryptString(JSON.stringify(connections)));}
 function publicConnection(connection){const {password,privateKey,passphrase,token,...data}=connection;return {...data,configured:connection.provider==='github'?Boolean(token):Boolean(connection.fingerprint),hasToken:Boolean(token),hasPassword:Boolean(password),hasPrivateKey:Boolean(privateKey)};}
 async function mergedConnection(input){
-  const old=await readConnection();const same=old.host===input.host&&Number(old.port)===Number(input.port)&&old.username===input.username&&old.authType===input.authType;
+  const old=await readConnection(input.provider==='github'?'github':'sftp');const same=old.host===input.host&&Number(old.port)===Number(input.port)&&old.username===input.username&&old.authType===input.authType;
   if(input.provider==='github')return github.validate({...input,token:input.token||(old.provider==='github'&&old.owner===input.owner&&old.repo===input.repo?old.token:'')});
   return deployment.validate({...input,password:input.password||(same?old.password:''),privateKey:input.privateKey||(same?old.privateKey:''),passphrase:input.passphrase||(same?old.passphrase:'')});
 }

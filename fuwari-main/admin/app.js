@@ -49,7 +49,7 @@ function resizePreview(){
   const frame=$('#preview-frame');$('#frame-wrap').style.width=`${width*scale}px`;frame.style.width=`${width}px`;frame.style.height=`${Math.max(600,(stage.clientHeight-32)/scale)}px`;frame.style.transform=`scale(${scale})`;
 }
 function sendPreviewSettings(){if(!state)return;$('#preview-frame').contentWindow?.postMessage({type:'blog-studio-appearance',hue:Number(current&&['profile','appearance'].includes(view)?current.hue:state.settings.hue),dark:previewDark},state.previewOrigin);}
-function applyStudioTheme(settings=studioSettings){studioSettings={...studioSettings,...settings};const dark=studioSettings.theme==='dark'||(studioSettings.theme==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);const accent=`hsl(${Number(studioSettings.hue)||150} 48% 34%)`;document.documentElement.style.setProperty('--accent',accent);document.documentElement.style.setProperty('--studio-accent',accent);document.documentElement.dataset.theme=dark?'dark':'light';}
+function applyStudioTheme(settings=studioSettings){studioSettings={...studioSettings,...settings};const dark=studioSettings.theme==='dark'||(studioSettings.theme==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);const parsedHue=Number(studioSettings.hue);const hue=Number.isFinite(parsedHue)?Math.max(0,Math.min(360,parsedHue)):150;document.documentElement.style.setProperty('--hue',String(hue));document.documentElement.dataset.theme=dark?'dark':'light';}
 const systemThemeMedia=window.matchMedia('(prefers-color-scheme: dark)');systemThemeMedia.addEventListener?.('change',()=>{if(studioSettings.theme==='system')applyStudioTheme();});
 $('#preview-frame').addEventListener('load',()=>{if(!state?.previewReady)return;$('#preview-loading').hidden=true;$('#preview-status').textContent='与本地内容同步';sendPreviewSettings();});
 window.addEventListener('resize',resizePreview);
@@ -85,12 +85,12 @@ async function renderStudioSettings(){
   $('#studio-device').value=s.device||'desktop';
   let current={...s,hue};
   const systemDark=()=>window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const apply=()=>{applyStudioTheme({theme:current.theme,hue:current.hue});const accent=`hsl(${current.hue} 48% 34%)`;$('#studio-color-orb').style.background=accent;$('#studio-hue-value').value=`${current.hue}°`;$('#studio-hue-value').textContent=`${current.hue}°`;document.querySelectorAll('[data-theme]').forEach(b=>b.classList.toggle('active',b.dataset.theme===current.theme));};
+  const apply=()=>{applyStudioTheme({theme:current.theme,hue:current.hue});$('#studio-color-orb').style.background='var(--accent)';$('#studio-hue-value').value=`${current.hue}°`;$('#studio-hue-value').textContent=`${current.hue}°`;document.querySelectorAll('.mode-segmented [data-theme]').forEach(b=>b.classList.toggle('active',b.dataset.theme===current.theme));};
   const save=async()=>{await api('/api/desktop/settings',{method:'PUT',body:{hue:current.hue,theme:current.theme,device:$('#studio-device').value,autosaveDelay:Math.max(300,Math.min(5000,Number($('#studio-delay').value)||700)),cacheDir:$('#studio-cache').value.trim()}});};
   const saveQuiet=()=>save().catch(error=>toast(error.message,true));
   $('#studio-hue').addEventListener('input',()=>{current.hue=Number($('#studio-hue').value);apply();saveQuiet();});
   document.querySelectorAll('[data-hue]').forEach(b=>b.addEventListener('click',()=>{$('#studio-hue').value=b.dataset.hue;current.hue=Number(b.dataset.hue);apply();saveQuiet();}));
-  document.querySelectorAll('[data-theme]').forEach(b=>b.addEventListener('click',()=>{current.theme=b.dataset.theme;apply();saveQuiet();}));
+  document.querySelectorAll('.mode-segmented [data-theme]').forEach(b=>b.addEventListener('click',()=>{current.theme=b.dataset.theme;apply();saveQuiet();}));
   const mediaQuery=window.matchMedia('(prefers-color-scheme: dark)');mediaQuery.addEventListener?.('change',()=>{if(current.theme==='system')apply();});
   $('#studio-choose-folder').onclick=async()=>{try{const picked=await api('/api/desktop/settings/choose',{method:'POST'});if(!picked.canceled){$('#studio-cache').value=picked.cacheDir;current.cacheDir=picked.cacheDir;await save();$('#studio-result').textContent='缓存目录已保存。';}}catch(e){toast(e.message,true);}};
   $('#studio-save').onclick=async()=>{try{await save();$('#studio-result').textContent='设置已保存，当前窗口已立即应用。';toast('工作台设置已保存');}catch(e){toast(e.message,true);}};

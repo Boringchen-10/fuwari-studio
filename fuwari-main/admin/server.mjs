@@ -117,14 +117,17 @@ async function api(req,res,url) {
     job={status:'running',logs:[],output:'',finishedAt:null};
     void (async()=>{
       try {
-        const connection=await desktopCall('connection-get');
-        if (!connection.configured) throw new Error('请先连接并保存服务器');
+        const connections=await desktopCall('connections-get');
+        const targets=Array.isArray(input.targets)?input.targets.filter(target=>target==='sftp'||target==='github'):[];
+        const selected=targets.length?targets:['sftp'];
+        if (!selected.some(target=>connections[target]?.configured)) throw new Error('请先保存至少一个已选择的发布连接');
+        const connection=connections[selected.find(target=>connections[target]?.configured)];
         const oldSite=process.env.SITE_URL;
         process.env.SITE_URL=connection.siteUrl;
         try { await buildRelease(true); } finally { if(oldSite)process.env.SITE_URL=oldSite;else delete process.env.SITE_URL; }
         if(job.status==='failed') return;
         job.status='running';addLog(connection.provider==='github'?'\n正在提交 GitHub Pages…\n':'\n正在通过 SFTP 发布…\n');
-        const result=await desktopCall('deploy',{directory:job.output});
+        const result=await desktopCall('deploy',{directory:job.output,targets:selected});
         addLog(result.message);job.status='success';job.deployed=!result.pending;job.pending=Boolean(result.pending);job.commit=result.commit;job.finishedAt=new Date().toISOString();
       }catch(error){addLog(error.message);job.status='failed';}
       finally {await fs.writeFile(path.join(localRoot,'last-build.json'),JSON.stringify(job,null,2));}
