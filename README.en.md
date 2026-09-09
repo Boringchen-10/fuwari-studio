@@ -1,39 +1,42 @@
-# Fuwari Studio
+# Blog Studio
 
 [简体中文](README.md) | **English**
 
-A Windows desktop editor for Fuwari blogs. Write locally, customize your site, preview the actual website, and publish to your server. This is an independent project, not an official Fuwari application.
+A Windows desktop editor for Fuwari blogs. Write locally, customize your site, preview the actual website, and publish to your server. Blog Studio is an independent project, not an official Fuwari application.
 
 ## Download and Start
 
-Download the Windows x64 archive from [Releases](https://github.com/Boringchen-10/fuwari-studio/releases), extract the entire folder, and run `Fuwari Studio.exe`. Supports Windows 10/11 x64. Electron, Node 22, and template dependencies are bundled; users do not need to install Node or Git. First launch may take several minutes and requires several GB of free space.
+Download the Windows x64 archive from [Releases](https://github.com/Boringchen-10/fuwari-studio/releases), extract the entire folder, and run `Blog Studio v0.1.3.exe`. Supports Windows 10/11 x64. Electron, Node 22, and template dependencies are bundled; users do not need to install Node or Git. First launch may take several minutes and requires several GB of free space.
 
 ## v0.1 Features
 
-Current version: **v0.1.1**, adding GitHub Pages publishing. [Changes and known issues](docs/releases/v0.1.1.en.md) · [Initial v0.1 overview](docs/releases/v0.1.0.en.md).
+Current version: **v0.1.3**, adding multiple sites, a version timeline, and multiple deployment targets. [Current changes](docs/releases/v0.1.3.en.md) · [Initial v0.1 overview](docs/releases/v0.1.0.en.md).
 
 - Markdown posts, drafts, categories, tags, and cover images.
 - Local autosave and live Fuwari preview with desktop and mobile viewport options.
 - Avatar, profile, banner, theme color, navigation, About page, and friend links.
-- Create blogs, open compatible projects, and restore deleted posts from the recycle bin.
+- Create blogs, open compatible projects, switch from a recent-sites list, and restore deleted posts from the recycle bin.
 - Build static output and release packages; draft pages are excluded from production.
-- SFTP/SSH publishing with password or private key authentication and host fingerprint confirmation.
+- Keep a timestamped release package and editable source snapshot for every build, and create a new project copy from a snapshot.
+- Save multiple named SFTP/SSH servers with password or private key authentication and host fingerprint confirmation.
+- Select one or several SFTP servers and GitHub Pages for each publish operation.
 - Windows encryption for saved credentials; remote backups of replaced SFTP files and attempted recovery on failure.
 
 Edit your blog, configure a connection, then choose Build and Publish. Configure Nginx/Apache and a dedicated website directory yourself; the app does not install a web server.
 
-## Projects and Backups
+## Sites, Versions, and Data
 
-The default project is `Fuwari Studio Data/Projects/MyBlog` beside the application. Local saves retain previous file contents in `.local-admin/history`; there is no one-click history restoration UI yet. Back up the complete project separately. Distribute the original release archive, not your personal `Fuwari Studio Data` folder.
+Application settings, recent sites, and encrypted credentials are stored under `%APPDATA%\Blog Studio`; new default sites are created in its `Projects` directory. On the first v0.1.3 launch, Blog Studio searches older installation folders for `Fuwari Studio Data` and imports existing site paths, settings, and connections.
+
+Each site stores timestamped editable snapshots in `.local-admin/versions` and matching output packages in `.local-admin/releases`. The Sites & Versions view can switch sites or create an independent project copy from a snapshot. Older static-only packages are clearly labeled as output-only. Continue to back up complete project directories regularly.
 
 ## Limitations
 
 - Windows x64 and Fuwari projects adapted with `src/site-settings.json` only; not a general-purpose CMS.
 - The application UI is currently Chinese. Documentation language links do not imply an English UI.
-- No bidirectional sync, cloud source backup, automatic updates, or code signing.
+- No reverse synchronization from a live website, cloud source backup, automatic updates, or code signing.
 - All files under `public`, including unused uploads, become public. Keep private files elsewhere.
 - SFTP replaces individual files rather than switching the whole site atomically. Network loss can prevent complete recovery.
-- Concurrent preview processes have been observed to cause Astro cache write conflicts. Save and close extra instances, then restart if needed. A dedicated fix has not been released.
 
 ## Release Documentation
 

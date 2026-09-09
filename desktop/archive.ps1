@@ -1,9 +1,9 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$releaseRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../release-v012'))
+$releaseRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../release-v013'))
 $appRoot = Join-Path $releaseRoot 'Blog Studio-win32-x64'
-$archivePath = Join-Path $releaseRoot 'Blog-Studio-v0.1.2-Windows-x64.zip'
+$archivePath = Join-Path $releaseRoot 'Blog-Studio-v0.1.3-Windows-x64.zip'
 $stream = [IO.File]::Open($archivePath, [IO.FileMode]::Create)
 $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create)
 $pending = [Collections.Generic.Stack[string]]::new()

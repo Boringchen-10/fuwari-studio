@@ -14,6 +14,7 @@ const postsRoot = path.join(root, 'src/content/posts');
 const localRoot = path.join(root, '.local-admin');
 const historyRoot = path.join(localRoot, 'history');
 const trashRoot = path.join(localRoot, 'trash');
+const versionsRoot = path.join(localRoot, 'versions');
 const settingsFile = path.join(root, 'src/site-settings.json');
 const csrf = randomBytes(32).toString('hex');
 let queue = Promise.resolve();
@@ -76,6 +77,11 @@ async function trashList() {
   return result.sort((a,b)=>b.deletedAt.localeCompare(a.deletedAt));
 }
 const addLog = chunk => {job.logs.push(String(chunk).replace(/\x1b\[[0-9;]*m/g,''));if(job.logs.length>300)job.logs.shift();};
+const snapshotFiles=['src','public','package.json','pnpm-lock.yaml','astro.config.mjs','tailwind.config.cjs','postcss.config.mjs','svelte.config.js','tsconfig.json','LICENSE'];
+async function writeVersionMetadata(id,patch={}){const file=confined(versionsRoot,path.join(id,'metadata.json'));let old={};try{old=JSON.parse(await fs.readFile(file,'utf8'));}catch{}await fs.mkdir(path.dirname(file),{recursive:true});await atomicWrite(file,JSON.stringify({...old,...patch},null,2));}
+async function createVersionSnapshot(id,createdAt,settings){const source=confined(versionsRoot,path.join(id,'source'));await fs.mkdir(source,{recursive:true});for(const name of snapshotFiles){const from=path.join(root,name);if(await exists(from))await fs.cp(from,path.join(source,name),{recursive:true});}await writeVersionMetadata(id,{id,createdAt,siteName:settings.title||path.basename(root),siteUrl:'',status:'building',output:path.join(localRoot,'releases',id),source});}
+async function listVersions(){await fs.mkdir(versionsRoot,{recursive:true});const result=[];for(const id of await fs.readdir(versionsRoot)){try{result.push(JSON.parse(await fs.readFile(path.join(versionsRoot,id,'metadata.json'),'utf8')));}catch{}}return result.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));}
+async function allVersions(){const result=await listVersions();const known=new Set(result.map(item=>item.id));const releasesRoot=path.join(localRoot,'releases');await fs.mkdir(releasesRoot,{recursive:true});for(const id of await fs.readdir(releasesRoot)){if(known.has(id))continue;try{const stat=await fs.stat(path.join(releasesRoot,id));if(stat.isDirectory())result.push({id,createdAt:stat.birthtime.toISOString(),siteName:'旧版发布包',siteUrl:'',status:'built',output:path.join(releasesRoot,id),source:'',legacy:true});}catch{}}return result.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));}
 async function runBuildCommand(args) {
   await new Promise((resolve,reject)=>{
     buildChild=spawn(process.execPath,args,{cwd:root,windowsHide:true,env:{...process.env,ASTRO_TELEMETRY_DISABLED:'1'}});
@@ -84,13 +90,17 @@ async function runBuildCommand(args) {
   });
 }
 async function buildRelease(forDeployment=false) {
+  let id;
   try {
-    const id = new Date().toISOString().replace(/[:.]/g,'-');
+    const createdAt=new Date().toISOString();const settings=JSON.parse(await fs.readFile(settingsFile,'utf8'));const site=String(settings.title||'blog').replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').trim().slice(0,48)||'blog';
+    id = `${createdAt.replace(/[:.]/g,'-')}--${site}`;
     const out = path.join(localRoot,'releases',id);
+    await createVersionSnapshot(id,createdAt,settings);
     await runBuildCommand([path.join(root,'node_modules/astro/astro.js'),'build','--outDir',out]);
     await runBuildCommand([path.join(root,'node_modules/pagefind/lib/runner/bin.cjs'),'--site',out]);
-    job={...job,status:forDeployment?'running':'success',output:out,finishedAt:forDeployment?null:new Date().toISOString()};
-  } catch(error) {addLog(error.message);job={...job,status:'failed',finishedAt:new Date().toISOString()};}
+    job={...job,status:forDeployment?'running':'success',output:out,versionId:id,siteName:settings.title||site,finishedAt:forDeployment?null:new Date().toISOString()};
+    await writeVersionMetadata(id,{status:forDeployment?'ready-to-publish':'built',finishedAt:new Date().toISOString()});
+  } catch(error) {addLog(error.message);job={...job,status:'failed',versionId:id,finishedAt:new Date().toISOString()};if(id)await writeVersionMetadata(id,{status:'failed',finishedAt:job.finishedAt,error:error.message});}
   finally {buildChild=null;await fs.writeFile(path.join(localRoot,'last-build.json'),JSON.stringify(job,null,2));}
 }
 try {job=JSON.parse(await fs.readFile(path.join(localRoot,'last-build.json'),'utf8'));if(job.status==='running')job.status='failed';} catch {}
@@ -98,13 +108,19 @@ try {job=JSON.parse(await fs.readFile(path.join(localRoot,'last-build.json'),'ut
 async function api(req,res,url) {
   const route=url.pathname;
   if(req.method!=='GET' && job.status==='running') fail('正在构建或发布，请完成后再修改内容',423);
-  if (route === '/api/desktop' && req.method === 'GET') return json(res, {enabled:Boolean(process.send),version:'0.1.2',project:root});
+  if (route === '/api/desktop' && req.method === 'GET') return json(res, {enabled:Boolean(process.send),version:'0.1.3',project:root});
   if (route === '/api/desktop/settings' && req.method === 'GET') return json(res, await desktopCall('studio-settings-get'));
   if (route === '/api/desktop/settings' && req.method === 'PUT') return json(res, await desktopCall('studio-settings-save', await body(req)));
   if (route === '/api/desktop/settings/choose' && req.method === 'POST') return json(res, await desktopCall('studio-settings-choose'));
+  if (route === '/api/projects' && req.method === 'GET') return json(res, await desktopCall('projects-get'));
+  if (route === '/api/projects/open' && req.method === 'POST') return json(res, await desktopCall('project-open'));
+  if (route === '/api/projects/switch' && req.method === 'POST') return json(res, await desktopCall('project-switch',await body(req)));
+  if (route === '/api/versions' && req.method === 'GET') return json(res, await allVersions());
+  if (route === '/api/versions/restore' && req.method === 'POST') return json(res, await desktopCall('version-restore',await body(req)));
   if (route === '/api/connections' && req.method === 'GET') return json(res, await desktopCall('connections-get'));
   if (route === '/api/connection' && req.method === 'GET') return json(res, await desktopCall('connection-get'));
   if (route === '/api/connection' && req.method === 'PUT') return json(res, await desktopCall('connection-save',await body(req)));
+  if (route === '/api/connection' && req.method === 'DELETE') return json(res, await desktopCall('connection-delete',await body(req)));
   if (route === '/api/connection/test' && req.method === 'POST') return json(res, await desktopCall('connection-test',await body(req)));
   if (route === '/api/github/status' && req.method === 'GET') return json(res, await desktopCall('github-status',{commit:job.commit}));
   if (route === '/api/project/open' && req.method === 'POST') return json(res, await desktopCall('project-open'));
@@ -118,10 +134,11 @@ async function api(req,res,url) {
     void (async()=>{
       try {
         const connections=await desktopCall('connections-get');
-        const targets=Array.isArray(input.targets)?input.targets.filter(target=>target==='sftp'||target==='github'):[];
+        const targets=Array.isArray(input.targets)?input.targets.filter(target=>target==='sftp'||target==='github'||/^sftp:[\w-]+$/.test(String(target))):[];
         const selected=targets.length?targets:['sftp'];
-        if (!selected.some(target=>connections[target]?.configured)) throw new Error('请先保存至少一个已选择的发布连接');
-        const connection=connections[selected.find(target=>connections[target]?.configured)];
+        if (!selected.some(target=>target==='github'?connections.github?.configured:String(target).startsWith('sftp:')?connections.sftpProfiles?.some(profile=>profile.profileId===String(target).slice(5)&&profile.configured):connections.sftpProfiles?.[0]?.configured)) throw new Error('请先保存至少一个已选择的发布连接');
+        const selectedConnection=selected.find(target=>target==='github'?connections.github?.configured:String(target).startsWith('sftp:')?connections.sftpProfiles?.some(profile=>profile.profileId===String(target).slice(5)):connections.sftpProfiles?.[0]?.configured);
+        const connection=selectedConnection==='github'?connections.github:String(selectedConnection).startsWith('sftp:')?connections.sftpProfiles.find(profile=>profile.profileId===String(selectedConnection).slice(5)):connections.sftpProfiles?.[0];
         const oldSite=process.env.SITE_URL;
         process.env.SITE_URL=connection.siteUrl;
         try { await buildRelease(true); } finally { if(oldSite)process.env.SITE_URL=oldSite;else delete process.env.SITE_URL; }
@@ -129,6 +146,7 @@ async function api(req,res,url) {
         job.status='running';addLog(connection.provider==='github'?'\n正在提交 GitHub Pages…\n':'\n正在通过 SFTP 发布…\n');
         const result=await desktopCall('deploy',{directory:job.output,targets:selected});
         addLog(result.message);job.status='success';job.deployed=!result.pending;job.pending=Boolean(result.pending);job.commit=result.commit;job.finishedAt=new Date().toISOString();
+        await writeVersionMetadata(job.versionId,{status:result.pending?'pending':'published',publishedAt:job.finishedAt,targets:result.sites?.map(site=>site.target)||selected,sites:result.sites||[],siteUrl:result.sites?.[0]?.siteUrl||connection.siteUrl||'',message:result.message});
       }catch(error){addLog(error.message);job.status='failed';}
       finally {await fs.writeFile(path.join(localRoot,'last-build.json'),JSON.stringify(job,null,2));}
     })();

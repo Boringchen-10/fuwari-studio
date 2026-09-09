@@ -5,7 +5,7 @@ const refreshIcons = () => window.lucide?.createIcons();
 let state, current, view='posts', version=0, savedVersion=0, timer, saving, blocked=false, loadSequence=0;
 let previewPath='/', device='desktop', previewDark=false, previewTimer, uploadTarget, toastTimer;
 let studioSettings={theme:'system',hue:150,device:'desktop',autosaveDelay:700};
-const titles={posts:'全部文章',drafts:'草稿箱',profile:'个人资料',appearance:'外观与导航',about:'关于页面',friends:'友情链接',publish:'发布中心',trash:'回收站',post:'编辑文章',server:'服务器连接',settings:'工作台设置'};
+const titles={posts:'全部文章',drafts:'草稿箱',profile:'个人资料',appearance:'外观与导航',about:'关于页面',friends:'友情链接',sites:'网站与版本',publish:'发布中心',trash:'回收站',post:'编辑文章',server:'服务器连接',settings:'工作台设置'};
 function toast(message,error=false){$('#toast').textContent=message;$('#toast').className=error?'error':'';$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').hidden=true,6000);}
 async function api(url, options={}) {
   const response=await fetch(url,{...options,headers:{'Content-Type':'application/json','X-CSRF-Token':state?.csrf || '',...options.headers},body:options.body===undefined?undefined:JSON.stringify(options.body)});
@@ -70,6 +70,7 @@ async function route(){
     if(view==='post') {const data=await api(`/api/posts/${encodeURIComponent(next.slug)}`);if(sequence!==loadSequence)return;current=data;renderPost();setPreview(`/posts/${data.slug}/`);}
     else if(['profile','appearance'].includes(view)){current=structuredClone(state.settings);view==='profile'?renderProfile():renderAppearance();setPreview('/');}
     else if(['about','friends'].includes(view)){const data=await api(`/api/pages/${view}`);if(sequence!==loadSequence)return;current=data;renderPage();setPreview(`/${view}/`);}
+    else if(view==='sites'){await window.renderSites();setPreview('/');}
     else if(view==='publish'){renderPublish();setPreview('/');}
     else if(view==='server'){await renderServer();setPreview('/');}
     else if(view==='settings'){await renderStudioSettings();setPreview('/');}
@@ -161,4 +162,4 @@ function updateBuild(){if(view!=='publish')return;const job=state.job;$('#build-
 window.addEventListener('hashchange',()=>route());
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();save().then(()=>toast('已保存到本地')).catch(()=>{});}});
 async function poll(){try{const data=await api('/api/status');const wasReady=state.previewReady;const previous=state.job.status;Object.assign(state,data);$('#connection-label').textContent='仅在本机运行';if(state.previewReady&&!wasReady)setPreview(previewPath,true);if(state.previewError){$('#preview-loading').hidden=false;$('#preview-loading').textContent=state.previewError;}if(previous!==state.job.status||state.job.status==='running')updateBuild();}catch{$('#connection-label').textContent='本地连接已断开';}finally{setTimeout(poll,2000);}}
-(async()=>{try{studioSettings=await api('/api/desktop/settings');applyStudioTheme(studioSettings);device=studioSettings.device==='mobile'?'mobile':'desktop';document.querySelectorAll('[data-device]').forEach(item=>item.classList.toggle('active',item.dataset.device===device));state=await api('/api/bootstrap');stats();await route();if(state.previewReady)setPreview(previewPath,true);poll();}catch(error){$('#editor-pane').innerHTML=`<div class="empty">${escape(error.message)}<p>请刷新页面重试</p>`;}refreshIcons();})();
+(async()=>{try{studioSettings=await api('/api/desktop/settings');applyStudioTheme(studioSettings);device=studioSettings.device==='mobile'?'mobile':'desktop';document.querySelectorAll('[data-device]').forEach(item=>item.classList.toggle('active',item.dataset.device===device));state=await api('/api/bootstrap');$('#current-site-name').textContent=state.settings.title||'我的博客';stats();await route();if(state.previewReady)setPreview(previewPath,true);poll();}catch(error){$('#editor-pane').innerHTML=`<div class="empty">${escape(error.message)}<p>请刷新页面重试</p>`;}refreshIcons();})();
