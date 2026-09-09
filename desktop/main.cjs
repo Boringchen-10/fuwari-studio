@@ -121,11 +121,18 @@ async function prepareRuntime(){
   await fs.mkdir(logicalTarget,{recursive:true});
   const target=await fs.realpath(logicalTarget);
   const marker=path.join(target,'ready.json');
-  try{await fs.access(marker);const result=await execFileAsync(nodePath,[path.join(__dirname,'runtime.cjs'),'prepare',resources,target],{windowsHide:true});template=result.stdout.trim();return;}catch{}
+  try{
+    const markerData=JSON.parse(await fs.readFile(marker,'utf8'));
+    if(markerData.adminRevision!=='palette-v2'){
+      await fs.cp(path.join(resources,'template','admin'),path.join(target,'template','admin'),{recursive:true,force:true});
+      await fs.writeFile(marker,JSON.stringify({version:'0.1.2',adminRevision:'palette-v2'}));
+    }
+    const result=await execFileAsync(nodePath,[path.join(__dirname,'runtime.cjs'),'prepare',resources,target],{windowsHide:true});template=result.stdout.trim();return;
+  }catch{}
   await fs.mkdir(target,{recursive:true});
   await fs.cp(path.join(resources,'template'),path.join(target,'template'),{recursive:true,force:false});
   const result=await execFileAsync(nodePath,[path.join(__dirname,'runtime.cjs'),'prepare',resources,target],{windowsHide:true});
-  await fs.writeFile(marker,JSON.stringify({version:'0.1.2'}));template=result.stdout.trim();
+  await fs.writeFile(marker,JSON.stringify({version:'0.1.2',adminRevision:'palette-v2'}));template=result.stdout.trim();
 }
 async function chooseProject(create=false){
   if(publishing)return;
