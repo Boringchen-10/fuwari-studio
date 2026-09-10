@@ -9,7 +9,7 @@ const staging=path.join(base,'staging-compact');
 const template=path.join(staging,'template');
 await fs.mkdir(template,{recursive:true});
 // Only template-owned source is included. Personal content, credentials and history are excluded.
-for(const name of ['src','public','admin','scripts','package.json','pnpm-lock.yaml','astro.config.mjs','tailwind.config.cjs','postcss.config.mjs','svelte.config.js','tsconfig.json','LICENSE']){
+for(const name of ['blog-studio.json','src','public','admin','scripts','package.json','pnpm-lock.yaml','astro.config.mjs','tailwind.config.cjs','postcss.config.mjs','svelte.config.js','tsconfig.json','LICENSE']){
   await fs.cp(path.join(project,name),path.join(template,name),{recursive:true,filter:source=>{
     const rel=path.relative(project,source).replaceAll('\\','/');
     return !rel.startsWith('src/content/posts/')&&!rel.startsWith('public/uploads/')&&!rel.startsWith('src/site-settings.json')&&!rel.startsWith('src/content/spec/')&&!rel.endsWith('.test.mjs')&&!rel.endsWith('verify-api.mjs')&&!rel.endsWith('import-prototype.mjs');
@@ -23,6 +23,7 @@ await fs.mkdir(path.join(template,'src/content/spec'),{recursive:true});
 await fs.writeFile(path.join(template,'src/content/spec/about.md'),'# 关于我\n\n欢迎来到我的博客。这里记录生活、学习和喜欢的事物。\n');
 await fs.writeFile(path.join(template,'src/content/spec/friends.md'),'# 友情链接\n\n## [Fuwari](https://github.com/saicaca/fuwari)\n\n本站使用的开源博客模板。\n');
 const modules=path.join(project,'node_modules'),target=path.join(template,'node_modules'),links=[];
+const modulesReal=await fs.realpath(modules);
 function compact(relative){const parts=relative.split(path.sep);if(parts[0]==='.pnpm'&&parts[1]&&parts[1]!=='node_modules')parts[1]=createHash('sha256').update(parts[1]).digest('hex').slice(0,12);return parts.join(path.sep);}
 let copied=0;
 async function copyModules(relative=''){
@@ -31,9 +32,9 @@ async function copyModules(relative=''){
     if(['.vite','.astro','.cache','.bin','.modules.yaml'].includes(item.name))continue;
     const rel=path.join(relative,item.name),source=path.join(modules,rel),destination=path.join(target,compact(rel));
     if(item.isSymbolicLink()){
-      const real=await fs.realpath(source);if(!real.startsWith(modules+path.sep))throw new Error('External dependency link: '+rel);
+      const real=await fs.realpath(source);if(!real.startsWith(modulesReal+path.sep))throw new Error('External dependency link: '+rel);
       const stat=await fs.stat(real);
-      if(stat.isDirectory())links.push({path:compact(rel),target:compact(path.relative(modules,real))});else await fs.copyFile(real,destination);
+      if(stat.isDirectory())links.push({path:compact(rel),target:compact(path.relative(modulesReal,real))});else await fs.copyFile(real,destination);
     }else if(item.isDirectory())await copyModules(rel);
     else{await fs.copyFile(source,destination);copied++;}
   }
@@ -46,5 +47,5 @@ if(!runtime)throw new Error('Set STUDIO_NODE_PATH to Node 22 node.exe');
 await fs.copyFile(runtime,path.join(staging,'runtime/node.exe'));
 await fs.copyFile(path.join(base,'NODE-LICENSE.txt'),path.join(staging,'runtime/NODE-LICENSE.txt'));
 await fs.copyFile(path.join(base,'README.md'),path.join(staging,'使用说明.txt'));
-const output=await packager({dir:base,out:path.resolve(base,'../release-v013'),name:'Blog Studio',appVersion:'0.1.3',platform:'win32',arch:'x64',overwrite:true,asar:false,prune:false,electronVersion:'40.10.6',electronZipDir:process.env.ELECTRON_ZIP_DIR,ignore:[/^\/(?!node_modules(?:\/|$)|main\.cjs$|runtime\.cjs$|deploy\.cjs$|github\.cjs$|GITHUB\.md$|package\.json$|README\.md$|NODE-LICENSE\.txt$).+/,/^\/node_modules\/(?:@electron|electron|electron-packager)(\/|$)/],extraResource:[template,path.join(staging,'runtime'),path.join(staging,'module-links.json'),path.join(staging,'使用说明.txt')],win32metadata:{CompanyName:'Blog Studio',FileDescription:'Blog Studio v0.1.3',ProductName:'Blog Studio',InternalName:'BlogStudio'}});
+const output=await packager({dir:base,out:path.resolve(base,'../release-v020'),name:'Blog Studio v0.2.0',appVersion:'0.2.0',platform:'win32',arch:'x64',overwrite:true,asar:false,prune:false,derefSymlinks:true,electronVersion:'40.10.6',electronZipDir:process.env.ELECTRON_ZIP_DIR,ignore:[/^\/(?!node_modules(?:\/|$)|adapters(?:\/|$)|workbench(?:\/|$)|main\.cjs$|runtime\.cjs$|project-standard\.cjs$|deploy\.cjs$|github\.cjs$|GITHUB\.md$|package\.json$|README\.md$|NODE-LICENSE\.txt$).+/,/^\/node_modules\/(?:@electron|electron|electron-packager)(\/|$)/],extraResource:[template,path.join(staging,'runtime'),path.join(staging,'module-links.json'),path.join(staging,'使用说明.txt')],win32metadata:{CompanyName:'Blog Studio',FileDescription:'Blog Studio v0.2.0',ProductName:'Blog Studio',InternalName:'BlogStudio'}});
 console.log(JSON.stringify({output,dependencyFiles:copied,portableLinks:links.length},null,2));

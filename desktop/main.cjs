@@ -8,13 +8,14 @@ const execFileAsync=promisify(execFile);
 const {createHash,randomUUID}=require('node:crypto');
 const deployment=require('./deploy.cjs');
 const github=require('./github.cjs');
+const standard=require('./project-standard.cjs');
 const dataArg=process.argv.find(arg=>arg.startsWith('--data-dir='));
 if(dataArg)app.setPath('userData',path.resolve(dataArg.slice(11)));
 else if(app.isPackaged)app.setPath('userData',path.join(app.getPath('appData'),'Blog Studio'));
 function findLegacyDataRootsSync(){if(!app.isPackaged||dataArg)return [];const searchRoot=path.resolve(path.dirname(process.execPath),'../..'),found=[];function walk(directory,depth){if(depth>4)return;let entries;try{entries=fsSync.readdirSync(directory,{withFileTypes:true});}catch{return;}for(const entry of entries){if(!entry.isDirectory()||entry.isSymbolicLink())continue;const full=path.join(directory,entry.name);if(entry.name==='Fuwari Studio Data'){found.push(full);continue;}if(['node_modules','resources','.git','Cache','Code Cache','Runtime'].includes(entry.name))continue;walk(full,depth+1);}}walk(searchRoot,0);return found;}
 function migrateLegacyEncryptionState(){if(!app.isPackaged||dataArg)return;const destination=app.getPath('userData'),marker=path.join(destination,'legacy-key-migrated.json');if(fsSync.existsSync(marker))return;const records=[];for(const root of findLegacyDataRootsSync()){try{const config=JSON.parse(fsSync.readFileSync(path.join(root,'studio.json'),'utf8')),source=path.join(root,'Local State'),mtime=fsSync.statSync(path.join(root,'studio.json')).mtimeMs;if(fsSync.existsSync(source))records.push({root,config,source,mtime});}catch{}}records.sort((a,b)=>Number(Boolean(b.config.project&&!path.resolve(b.config.project).toLowerCase().startsWith(path.resolve(b.root).toLowerCase()+path.sep)))-Number(Boolean(a.config.project&&!path.resolve(a.config.project).toLowerCase().startsWith(path.resolve(a.root).toLowerCase()+path.sep)))||b.mtime-a.mtime);if(!records.length)return;fsSync.mkdirSync(destination,{recursive:true});fsSync.copyFileSync(records[0].source,path.join(destination,'Local State'));fsSync.writeFileSync(marker,JSON.stringify({migratedAt:new Date().toISOString()}));}
 migrateLegacyEncryptionState();
-let window,child,project,closing=false,publishing=false;
+let window,child,project,closing=false,publishing=false,adminOrigin='';
 const resources=app.isPackaged?process.resourcesPath:path.resolve(__dirname,'staging-compact');
 let template=path.join(resources,'template');
 const nodePath=path.join(resources,'runtime/node.exe');
@@ -25,7 +26,7 @@ async function readAppConfig(){try{return JSON.parse(await fs.readFile(configFil
 async function writeAppConfig(data){await fs.mkdir(app.getPath('userData'),{recursive:true});const temp=configFile()+'.tmp';await fs.writeFile(temp,JSON.stringify(data,null,2));await fs.rename(temp,configFile());}
 async function findLegacyDataRoots(){return findLegacyDataRootsSync();}
 async function migrateLegacyData(){const roots=await findLegacyDataRoots();if(!roots.length)return;const saved=await readAppConfig(),records=[];for(const root of roots){try{const file=path.join(root,'studio.json'),stat=await fs.stat(file),config=JSON.parse(await fs.readFile(file,'utf8'));records.push({root,config,mtime:stat.mtimeMs});}catch{}}records.sort((a,b)=>b.mtime-a.mtime);const projectPaths=[...(saved.projects||[]).map(item=>typeof item==='string'?item:item.path),saved.project,...records.map(item=>item.config.project)].filter(Boolean);let active=saved.project;if(!active){const external=records.find(item=>item.config.project&&!path.resolve(item.config.project).toLowerCase().startsWith(path.resolve(item.root).toLowerCase()+path.sep));active=external?.config.project||records.find(item=>item.config.project)?.config.project;}const importedStudio=records.find(item=>item.config.studio)?.config.studio;const studio=saved.studio||importedStudio?{...(saved.studio||importedStudio)}:undefined;if(studio?.cacheDir&&roots.some(root=>path.resolve(studio.cacheDir).toLowerCase().startsWith(path.resolve(root).toLowerCase())))studio.cacheDir=app.getPath('userData');await writeAppConfig({...saved,...(studio?{studio}:{}),...(active?{project:active}:{}),projects:[...new Map(projectPaths.map(item=>[path.resolve(item).toLowerCase(),path.resolve(item)])).values()].slice(0,20)});const destination=path.join(app.getPath('userData'),'connections');await fs.mkdir(destination,{recursive:true});for(const item of records){const source=path.join(item.root,'connections');let files=[];try{files=await fs.readdir(source);}catch{}for(const name of files.filter(name=>name.endsWith('.bin'))){const target=path.join(destination,name);try{await fs.access(target);}catch{await fs.copyFile(path.join(source,name),target);}}}}
-async function projectSummary(candidate){try{const settings=JSON.parse(await fs.readFile(path.join(candidate,'src/site-settings.json'),'utf8'));return {path:candidate,name:settings.title||path.basename(candidate),subtitle:settings.subtitle||'',exists:true};}catch{return {path:candidate,name:path.basename(candidate),subtitle:'',exists:false};}}
+async function projectSummary(candidate){try{const report=await standard.inspectProject(candidate);const settings=report.recognized?JSON.parse(await fs.readFile(path.join(candidate,'src/site-settings.json'),'utf8')):{};return {path:candidate,name:settings.title||path.basename(candidate),subtitle:settings.subtitle||'',exists:report.canAdapt,standard:report.standard,base:report.base,message:report.message};}catch{return {path:candidate,name:path.basename(candidate),subtitle:'',exists:false,standard:false,base:'',message:'网站位置不可用'};}}
 async function rememberProject(candidate){const saved=await readAppConfig();const real=await fs.realpath(candidate);const projects=[real,...(saved.projects||[]).map(item=>typeof item==='string'?item:item.path).filter(item=>item&&path.resolve(item).toLowerCase()!==real.toLowerCase())].slice(0,20);await writeAppConfig({...saved,project:real,projects});return real;}
 async function listProjects(){const saved=await readAppConfig();const paths=[project,saved.project,...(saved.projects||[]).map(item=>typeof item==='string'?item:item.path)].filter(Boolean);const unique=[];for(const item of paths)if(!unique.some(old=>path.resolve(old).toLowerCase()===path.resolve(item).toLowerCase()))unique.push(item);return Promise.all(unique.map(projectSummary));}
 const credentialFile=()=>path.join(app.getPath('userData'),'connections',createHash('sha256').update(project.toLowerCase()).digest('hex')+'.bin');
@@ -48,11 +49,32 @@ async function mergedConnection(input){
   const profileName=String(input.profileName||old.profileName||'服务器').trim().slice(0,40);if(!profileName)throw new Error('请填写服务器名称');
   return deployment.validate({...input,provider:'sftp',profileId:input.profileId||old.profileId||randomUUID(),profileName,password:input.password||(same?old.password:''),privateKey:input.privateKey||(same?old.privateKey:''),passphrase:input.passphrase||(same?old.passphrase:'')});
 }
+async function activateProject(target){
+  await stopServer();project=target;await rememberProject(project);await startServer();
+}
 async function handle(action,data){
   if(action==='studio-settings-get'){const saved=await readAppConfig();return {...(saved.studio||{}),cacheDir:saved.studio?.cacheDir||app.getPath('userData')};}
   if(action==='studio-settings-choose'){const picked=await dialog.showOpenDialog(window,{title:'选择本地缓存目录',properties:['openDirectory','createDirectory']});return picked.canceled?{canceled:true}:{canceled:false,cacheDir:picked.filePaths[0]};}
   if(action==='studio-settings-save'){const saved=await readAppConfig();const studio={...(saved.studio||{}),hue:Math.max(0,Math.min(360,Number(data.hue)||150)),accent:/^#[0-9a-f]{6}$/i.test(String(data.accent||''))?data.accent:'#287d65',theme:['system','light','dark'].includes(data.theme)?data.theme:'system',device:['desktop','mobile'].includes(data.device)?data.device:'desktop',autosaveDelay:Math.max(300,Math.min(5000,Number(data.autosaveDelay)||700)),cacheDir:String(data.cacheDir||'').trim()};await writeAppConfig({...saved,studio});return studio;}
-  if(action==='projects-get')return {current:project,projects:await listProjects()};
+  if(action==='projects-get')return {current:project,projects:await listProjects(),welcome:!project};
+  if(action==='project-inspect'){
+    const pick=await dialog.showOpenDialog(window,{title:'选择已有网站文件夹',properties:['openDirectory']});
+    if(pick.canceled)return {canceled:true};
+    return standard.inspectProject(pick.filePaths[0]);
+  }
+  if(action==='project-import'){
+    const report=await standard.inspectProject(String(data.path||''));
+    if(!report.canAdapt)throw new Error(report.descriptorError||`这个网站暂时不能自动适配。缺少：${report.missing.join('、')}`);
+    const target=await ensureProject(report.path);
+    setTimeout(()=>activateProject(target).catch(error=>dialog.showErrorBox('无法导入网站',friendlyError(error))),50);
+    return {switching:true,project:target,migrated:!report.standard};
+  }
+  if(action==='project-create'){
+    const input=data||{};if(input.style!=='fuwari')throw new Error('当前版本只提供 Fuwari 样式');
+    const target=await createProjectInLibrary(input);
+    setTimeout(()=>activateProject(target).catch(error=>dialog.showErrorBox('无法创建网站',friendlyError(error))),50);
+    return {switching:true,project:target};
+  }
   if(action==='connections-get'){const all=await readConnections();const sftpProfiles=all.sftpProfiles.map(publicConnection);return {sftpProfiles,sftp:sftpProfiles[0]||{},github:publicConnection(all.github||{})};}
   if(action==='connection-get')return publicConnection(await readConnection(data?.provider,data?.profileId));
   if(action==='github-status')return github.status(await readConnection('github'),data.commit);
@@ -117,7 +139,7 @@ async function handle(action,data){
   }
   if(action==='project-switch'){
     const target=await ensureProject(String(data.path||''));
-    setTimeout(async()=>{try{await stopServer();project=target;await rememberProject(project);await startServer();}catch(error){dialog.showErrorBox('无法切换网站',error.message);}},50);
+    setTimeout(()=>activateProject(target).catch(error=>dialog.showErrorBox('无法切换网站',friendlyError(error))),50);
     return {switching:true,project:target};
   }
   if(action==='version-restore'){
@@ -125,49 +147,61 @@ async function handle(action,data){
     const source=path.resolve(project,'.local-admin','versions',id,'source');const allowed=path.resolve(project,'.local-admin','versions')+path.sep;if(!source.startsWith(allowed))throw new Error('版本路径不正确');await fs.access(path.join(source,'src/site-settings.json'));
     const baseName=path.basename(project).replace(/[^\p{L}\p{N}_.-]+/gu,'-').slice(0,40)||'Blog';const stamp=new Date().toISOString().replace(/[:.]/g,'-');const destination=path.join(app.getPath('userData'),'Projects',`${baseName}-恢复-${stamp}`);
     await fs.mkdir(destination,{recursive:true});for(const name of await fs.readdir(source))await fs.cp(path.join(source,name),path.join(destination,name),{recursive:true});const target=await ensureProject(destination);
-    setTimeout(async()=>{try{await stopServer();project=target;await rememberProject(project);await startServer();}catch(error){dialog.showErrorBox('无法打开恢复版本',error.message);}},50);
+    setTimeout(()=>activateProject(target).catch(error=>dialog.showErrorBox('无法打开恢复版本',friendlyError(error))),50);
     return {switching:true,project:target};
   }
-  if(action==='project-folder'){await shell.openPath(project);return {ok:true};}
+  if(action==='project-folder'){if(!project)throw new Error('请先创建或导入一个网站');await shell.openPath(project);return {ok:true};}
   if(action==='project-open'){
-    const pick=await dialog.showOpenDialog(window,{title:'打开已有 Fuwari 博客',properties:['openDirectory']});if(pick.canceled)return {canceled:true};const target=await ensureProject(pick.filePaths[0]);
-    setTimeout(async()=>{try{await stopServer();project=target;await rememberProject(project);await startServer();}catch(error){dialog.showErrorBox('无法打开网站',error.message);}},50);return {switching:true,project:target};
+    const pick=await dialog.showOpenDialog(window,{title:'打开已有网站',properties:['openDirectory']});if(pick.canceled)return {canceled:true};const target=await ensureProject(pick.filePaths[0]);
+    setTimeout(()=>activateProject(target).catch(error=>dialog.showErrorBox('无法打开网站',friendlyError(error))),50);return {switching:true,project:target};
   }
   throw new Error('未知桌面操作');
 }
 async function ensureProject(candidate){
-  for(const name of ['src/config.ts','src/site-settings.json','astro.config.mjs','package.json'])await fs.access(path.join(candidate,name));
-  const packageInfo=JSON.parse(await fs.readFile(path.join(candidate,'package.json'),'utf8'));if(!packageInfo.dependencies?.astro)throw new Error('这不是兼容的 Fuwari 项目');
+  const adapted=await standard.ensureStandardProject(candidate);
+  const descriptor=standard.validateDescriptor(adapted.descriptor);
   let moduleStat;try{moduleStat=await fs.lstat(path.join(candidate,'node_modules'));}catch{}
   if(!moduleStat||moduleStat.isSymbolicLink())await execFileAsync(nodePath,[path.join(__dirname,'runtime.cjs'),'link',path.join(template,'node_modules'),path.join(candidate,'node_modules')],{windowsHide:true});
   await fs.access(path.join(candidate,'node_modules/astro/astro.js'));
-  return fs.realpath(candidate);
+  const real=await fs.realpath(candidate);standard.resolveProjectPaths(real,descriptor);return real;
 }
-async function createProject(destination){
+async function createProject(destination,input={}){
   await fs.mkdir(destination,{recursive:true});
   if((await fs.readdir(destination)).length)throw new Error('新博客需要一个空文件夹');
   for(const name of await fs.readdir(template))if(name!=='node_modules')await fs.cp(path.join(template,name),path.join(destination,name),{recursive:true});
+  if(input.title){const settingsFile=path.join(destination,'src/site-settings.json');const settings=JSON.parse(await fs.readFile(settingsFile,'utf8'));settings.title=String(input.title).trim().slice(0,100)||settings.title;settings.subtitle=String(input.subtitle||'').trim().slice(0,200)||settings.subtitle;settings.name=String(input.name||'').trim().slice(0,100)||settings.name;await fs.writeFile(settingsFile,JSON.stringify(settings,null,2)+'\n');}
   return ensureProject(destination);
+}
+async function createProjectInLibrary(input){
+  const base=String(input.title||'我的网站').trim().replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').replace(/\s+/g,'-').slice(0,48)||'我的网站';
+  const parent=path.join(app.getPath('userData'),'Projects');await fs.mkdir(parent,{recursive:true});let destination=path.join(parent,base),suffix=2;
+  while(true){try{if((await fs.readdir(destination)).length)destination=path.join(parent,`${base}-${suffix++}`);else break;}catch(error){if(error.code==='ENOENT')break;throw error;}}
+  return createProject(destination,input);
+}
+function friendlyError(error){
+  const message=String(error?.message||error||'操作没有完成');
+  if(/ENOENT|no such file/i.test(message))return '网站文件不完整或已经被移动。请重新选择网站文件夹。';
+  if(/EACCES|EPERM|permission/i.test(message))return '没有权限修改这个文件夹。请选择自己拥有写入权限的位置。';
+  return message;
 }
 async function prepareRuntime(){
   const saved=await readAppConfig();
   const cacheRoot=String(saved.studio?.cacheDir||'').trim()||app.getPath('userData');
-  const logicalTarget=path.join(cacheRoot,'Runtime','0.1.3');
+  const logicalTarget=path.join(cacheRoot,'Runtime','0.2.0');
   await fs.mkdir(logicalTarget,{recursive:true});
   const target=await fs.realpath(logicalTarget);
   const marker=path.join(target,'ready.json');
   try{
     const markerData=JSON.parse(await fs.readFile(marker,'utf8'));
-    if(markerData.adminRevision!=='sites-v1'){
-      await fs.cp(path.join(resources,'template','admin'),path.join(target,'template','admin'),{recursive:true,force:true});
-      await fs.writeFile(marker,JSON.stringify({version:'0.1.3',adminRevision:'sites-v1'}));
+    if(markerData.workbenchRevision!=='standard-1.0'){
+      await fs.writeFile(marker,JSON.stringify({version:'0.2.0',workbenchRevision:'standard-1.0'}));
     }
     const result=await execFileAsync(nodePath,[path.join(__dirname,'runtime.cjs'),'prepare',resources,target],{windowsHide:true});template=result.stdout.trim();return;
   }catch{}
   await fs.mkdir(target,{recursive:true});
   await fs.cp(path.join(resources,'template'),path.join(target,'template'),{recursive:true,force:false});
   const result=await execFileAsync(nodePath,[path.join(__dirname,'runtime.cjs'),'prepare',resources,target],{windowsHide:true});
-  await fs.writeFile(marker,JSON.stringify({version:'0.1.3',adminRevision:'sites-v1'}));template=result.stdout.trim();
+  await fs.writeFile(marker,JSON.stringify({version:'0.2.0',workbenchRevision:'standard-1.0'}));template=result.stdout.trim();
 }
 async function chooseProject(create=false){
   if(publishing)return;
@@ -176,38 +210,38 @@ async function chooseProject(create=false){
   try{
     const target=create?await createProject(pick.filePaths[0]):await ensureProject(pick.filePaths[0]);
     const approval=await dialog.showMessageBox(window,{message:'切换博客前，请确认当前修改已保存。',buttons:['取消','切换'],defaultId:0,cancelId:0});if(approval.response!==1)return;
-    await stopServer();project=target;await rememberProject(project);await startServer();
+    await activateProject(target);
   }catch(error){dialog.showErrorBox('无法打开项目',error.message);}
 }
-async function stopServer(){if(!child)return;const old=child;child=null;await new Promise(resolve=>{old.once('exit',resolve);old.send({type:'shutdown'});setTimeout(()=>{old.kill();resolve();},4000).unref();});}
+async function stopServer(){adminOrigin='';if(!child)return;const old=child;child=null;await new Promise(resolve=>{old.once('exit',resolve);old.send({type:'shutdown'});setTimeout(()=>{old.kill();resolve();},4000).unref();});}
+function openWorkbench(hash){if(adminOrigin)window.loadURL(adminOrigin+hash);}
 async function startServer(){
-  window.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<body style="font-family:Segoe UI, sans-serif;background:#f7f8fa;color:#287d65;display:grid;place-items:center;height:90vh"><div><h2>Blog Studio v0.1.3</h2><p>正在打开本地博客…</p></div></body>'));
+  window.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<body style="font-family:Segoe UI, sans-serif;background:#f7f8fa;color:#287d65;display:grid;place-items:center;height:90vh"><div><h2>Blog Studio v0.2.0</h2><p>正在打开个人网站工作台…</p></div></body>'));
   const logDir=path.join(app.getPath('userData'),'logs');await fs.mkdir(logDir,{recursive:true});
-  child=fork(path.join(template,'admin/server.mjs'),[],{execPath:nodePath,cwd:project,windowsHide:true,silent:true,env:{...process.env,BLOG_PROJECT_ROOT:project,BLOG_ADMIN_PORT:'4310',BLOG_PREVIEW_PORT:'4322',ASTRO_TELEMETRY_DISABLED:'1'}});
+  const activeRoot=project||template;let descriptor=standard.validateDescriptor(standard.DEFAULT_DESCRIPTOR);if(project)descriptor=JSON.parse(await fs.readFile(path.join(project,standard.STANDARD_FILE),'utf8'));
+  child=fork(path.join(__dirname,'workbench/server.mjs'),[],{execPath:nodePath,cwd:activeRoot,windowsHide:true,silent:true,env:{...process.env,BLOG_PROJECT_ROOT:activeRoot,BLOG_STUDIO_DESCRIPTOR:JSON.stringify(descriptor),BLOG_STUDIO_WELCOME:project?'0':'1',BLOG_STUDIO_LOCAL_ROOT:path.join(app.getPath('userData'),'Welcome'),BLOG_ADMIN_PORT:'4310',BLOG_PREVIEW_PORT:'4322',ASTRO_TELEMETRY_DISABLED:'1'}});
   child.on('message',async message=>{if(!message?.id)return;const active=child;try{const result=await handle(message.action,message.data);if(active?.connected)active.send({reply:message.id,result});}catch(error){if(active?.connected)active.send({reply:message.id,error:error.message});}});
-  child.stdout.on('data',data=>{const text=data.toString();fs.appendFile(path.join(logDir,'server.log'),text).catch(()=>{});const match=text.match(/Blog Studio: (http:\/\/127\.0\.0\.1:\d+)/);if(match)window.loadURL(match[1]);});
+  child.stdout.on('data',data=>{const text=data.toString();fs.appendFile(path.join(logDir,'server.log'),text).catch(()=>{});const match=text.match(/Blog Studio: (http:\/\/127\.0\.0\.1:\d+)/);if(match){adminOrigin=match[1];window.loadURL(adminOrigin);}});
   child.stderr.on('data',data=>fs.appendFile(path.join(logDir,'server.log'),data).catch(()=>{}));
   child.on('error',error=>dialog.showErrorBox('启动失败',error.message));
   child.on('exit',code=>{if(child&&!closing&&code!==0)dialog.showErrorBox('本地服务已停止','请重新打开程序。诊断日志：'+path.join(logDir,'server.log'));});
 }
 app.whenReady().then(async()=>{
   if(!single)return;
-  window=new BrowserWindow({width:1450,height:950,minWidth:900,minHeight:650,title:'Blog Studio v0.1.3',backgroundColor:'#f7f8fa',webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true}});
+  window=new BrowserWindow({width:1450,height:950,minWidth:900,minHeight:650,title:'Blog Studio v0.2.0',backgroundColor:'#f7f8fa',webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true}});
   window.once('ready-to-show',()=>window.show());
   window.webContents.setWindowOpenHandler(({url})=>{if(/^https?:\/\//.test(url))shell.openExternal(url);return {action:'deny'};});
   window.webContents.on('will-navigate',(event,url)=>{if(!/^http:\/\/127\.0\.0\.1:\d+(\/|$)/.test(url)&&!url.startsWith('data:')){event.preventDefault();if(/^https?:\/\//.test(url))shell.openExternal(url);}});
   window.webContents.session.setPermissionRequestHandler((_webContents,_permission,callback)=>callback(false));
   window.on('close',async event=>{if(closing)return;event.preventDefault();const result=await dialog.showMessageBox(window,{type:'question',message:publishing?'正在发布，请等待完成后退出。':'退出本地工作台？',detail:'请确认顶部状态已显示保存完成。',buttons:publishing?['继续等待']:['取消','退出'],defaultId:0,cancelId:0});if(result.response===1){closing=true;await stopServer();window.destroy();app.quit();}});
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'项目',submenu:[{label:'新建博客',click:()=>chooseProject(true)},{label:'打开已有博客',click:()=>chooseProject(false)},{label:'打开项目文件夹',click:()=>shell.openPath(project)},{type:'separator'},{role:'quit',label:'退出'}]},{label:'设置',submenu:[{label:'打开设置面板',click:()=>window.loadURL(`http://127.0.0.1:${process.env.BLOG_ADMIN_PORT||4310}/#settings`)}]},{label:'编辑',submenu:[{role:'undo',label:'撤销'},{role:'redo',label:'重做'},{type:'separator'},{role:'cut',label:'剪切'},{role:'copy',label:'复制'},{role:'paste',label:'粘贴'},{role:'selectAll',label:'全选'}]},{label:'视图',submenu:[{role:'reload',label:'刷新'},{role:'resetZoom',label:'重置缩放'},{role:'zoomIn',label:'放大'},{role:'zoomOut',label:'缩小'}]},{label:'帮助',submenu:[{label:'关于 Blog Studio',click:()=>dialog.showMessageBox(window,{title:'Blog Studio',message:'Blog Studio v0.1.3',detail:'Windows x64 · Fuwari 本地编辑、预览和发布\n项目与服务器凭据保存在当前 Windows 用户的数据目录。'})}]}]));
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'网站',submenu:[{label:'创建新网站',click:()=>openWorkbench('#sites/new')},{label:'导入已有网站',click:()=>chooseProject(false)},{label:'打开网站文件夹',click:()=>project&&shell.openPath(project)},{type:'separator'},{role:'quit',label:'退出'}]},{label:'设置',submenu:[{label:'打开软件设置',click:()=>openWorkbench('#settings')}]},{label:'编辑',submenu:[{role:'undo',label:'撤销'},{role:'redo',label:'重做'},{type:'separator'},{role:'cut',label:'剪切'},{role:'copy',label:'复制'},{role:'paste',label:'粘贴'},{role:'selectAll',label:'全选'}]},{label:'视图',submenu:[{role:'reload',label:'刷新'},{role:'resetZoom',label:'重置缩放'},{role:'zoomIn',label:'放大'},{role:'zoomOut',label:'缩小'}]},{label:'帮助',submenu:[{label:'关于 Blog Studio',click:()=>dialog.showMessageBox(window,{title:'Blog Studio',message:'Blog Studio v0.2.0',detail:'简单的个人网站助手 · Blog Studio Standard 1.0\n当前官方基座：Fuwari'})}]}]));
   try {
-    window.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<body style="font-family:Segoe UI,sans-serif;background:#f7f8fa;color:#287d65;padding:80px"><h2>Blog Studio v0.1.3</h2><p>首次启动正在准备本地环境，请稍候…</p></body>'));
+    window.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<body style="font-family:Segoe UI,sans-serif;background:#f7f8fa;color:#287d65;padding:80px"><h2>Blog Studio v0.2.0</h2><p>正在准备个人网站工作台，请稍候…</p></body>'));
     await migrateLegacyData();
     await prepareRuntime();
     const saved=await readAppConfig();
-    if(saved.project)project=await ensureProject(saved.project);
-    else {project=await createProject(path.join(app.getPath('userData'),'Projects','MyBlog'));}
-    await rememberProject(project);
+    if(saved.project){try{project=await ensureProject(saved.project);await rememberProject(project);}catch(error){project=null;await writeAppConfig({...saved,project:null,lastOpenError:friendlyError(error)});}}
     await startServer();
-  }catch(error){dialog.showErrorBox('初始化失败',error.message+'\n请通过项目菜单选择一个兼容博客。');}
+  }catch(error){dialog.showErrorBox('初始化失败',friendlyError(error)+'\n请通过“网站”菜单重新选择。');}
 });
 app.on('window-all-closed',()=>app.quit());

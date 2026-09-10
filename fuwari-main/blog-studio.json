@@ -1,0 +1,45 @@
+{
+  "standardVersion": "1.0",
+  "base": {
+    "id": "fuwari",
+    "version": "1.0"
+  },
+  "runtime": {
+    "framework": "astro",
+    "theme": "fuwari"
+  },
+  "paths": {
+    "settings": "src/site-settings.json",
+    "content": "src/content/posts",
+    "assets": "public/uploads",
+    "public": "public",
+    "pages": {
+      "about": "src/content/spec/about.md",
+      "friends": "src/content/spec/friends.md"
+    }
+  },
+  "sections": [
+    {
+      "id": "posts",
+      "type": "collection",
+      "label": "文章"
+    },
+    {
+      "id": "about",
+      "type": "page",
+      "label": "关于"
+    },
+    {
+      "id": "friends",
+      "type": "page",
+      "label": "友情链接"
+    }
+  ],
+  "commands": {
+    "preview": "fuwari.preview",
+    "build": "fuwari.build"
+  },
+  "output": {
+    "directory": ".local-admin/releases"
+  }
+}
